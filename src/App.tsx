@@ -712,7 +712,7 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="1.1.8"
+        appVersion="1.1.9"
         currentShortcut={currentShortcut}
         onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
         ocrLanguages={ocrLanguages}
