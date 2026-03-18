@@ -2,8 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Metin Yakalayıcı",
   "version": "0.1.0",
-  "description": "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı.",
-  "copyright": "© 2026 Ekrem Kılınç",
   "identifier": "com.ekrem.metin-yakalayici",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,6 +29,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "copyright": "© 2026 Ekrem Kılınç",
+    "shortDescription": "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı.",
+    "longDescription": "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

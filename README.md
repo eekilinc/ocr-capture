@@ -1,72 +1,83 @@
-# OCR Capture (Tauri v2 + React + TypeScript)
+# Metin Yakalayıcı (OCR Capture)
 
-Desktop OCR tool for Windows, macOS, and Linux.
+**Metin Yakalayıcı**, ekranınızın herhangi bir bölgesini seçip içerisindeki metinleri saniyeler içinde ayıklamanızı sağlayan (OCR), modern ve yüksek performanslı bir masaüstü uygulamasıdır. **Tauri v2** mimarisi üzerine inşa edilmiştir, bu sayede sistem kaynaklarını çok az tüketir ve tamamen çevrimdışı çalışır.
 
-## What it does
+![Uygulama Ekran Görüntüsü](https://via.placeholder.com/800x450?text=Metin+Yakalayici+Preview)
 
-- Captures the current screen as an image.
-- Lets you draw a rectangle to pick the OCR region.
-- Extracts text with Tesseract (`tur+eng`).
-- Shows result text and lets you copy it.
+## 🚀 Özellikler
 
-## Tech stack
+*   **⚡ Hızlı Yakalama:** Global kısayol (`Ctrl + Alt + Shift + C`) ile anında ekran görüntüsü alma modu.
+*   **🔍 Çevrimdışı OCR:** İnternet bağlantısına ihtiyaç duymadan Türkçe ve İngilizce metinleri ayıklama (Tesseract.js entegrasyonu).
+*   **📂 Geçmiş Yönetimi:** Yakalanan görselleri ve ayıklanan metinleri otomatik kaydeder, geçmişe dönük inceleme imkanı sunar.
+*   **🎨 Modern Arayüz:** Kullanıcı dostu, "Glassmorphism" etkili şık tasarım.
+*   **🌙 Koyu/Açık Tema:** Göz yormayan tema seçenekleri.
+*   **Tray (Sistem Tepsisi):** Uygulama kapatıldığında arka planda çalışmaya devam eder ve sistem tepsisinden hızlıca erişilebilir.
+*   **Çoklu Monitör Desteği:** İstediğiniz monitörü seçerek yakalama yapabilme.
 
-- Tauri v2 (Rust backend commands)
-- React + TypeScript (Vite)
-- `screenshots` crate for screen capture
-- Tesseract CLI for OCR engine
+## 🛠️ Teknolojiler
 
-## Prerequisites
+Bu proje, modern web teknolojilerinin gücünü Rust'ın performansı ile birleştirir:
 
-1. Node.js 20+
-2. Rust toolchain (stable)
-3. Tauri OS prerequisites: <https://tauri.app/start/prerequisites/>
-4. Tesseract CLI in PATH
+*   **[Tauri v2](https://v2.tauri.app/):** Uygulama çatısı (Backend: Rust).
+*   **[React 19](https://react.dev/):** Kullanıcı arayüzü kütüphanesi.
+*   **[TypeScript](https://www.typescriptlang.org/):** Tip güvenliği.
+*   **[Rust](https://www.rust-lang.org/):** Sistem seviyesi işlemler ve performans.
+*   **[Vite](https://vitejs.dev/):** Hızlı geliştirme sunucusu ve derleyici.
 
-### Tesseract notes
+## 📦 Kurulum ve Çalıştırma
 
-- Install language packs for Turkish and English.
-- Quick test:
+Geliştirme ortamını kurmak için aşağıdaki adımları izleyin.
+
+### Gereksinimler
+
+*   [Node.js](https://nodejs.org/) (v18 veya üzeri)
+*   [Rust](https://www.rust-lang.org/tools/install) (Cargo dahil)
+*   İşletim sisteminize uygun derleme araçları (Windows için Visual Studio C++ Build Tools).
+
+### Geliştirme Modu
+
+Depoyu klonlayın ve bağımlılıkları yükleyin:
 
 ```bash
-tesseract --version
+git clone https://github.com/eekilinc/ocr-capture.git
+cd ocr-capture
+npm install
 ```
 
-## Run locally
+Geliştirme sunucusunu başlatın:
 
 ```bash
-npm install
 npm run tauri dev
 ```
 
-## Build
+### Derleme (Build)
+
+Uygulamanın dağıtılabilir `.exe` (Windows), `.dmg` (macOS) veya `.deb` (Linux) paketini oluşturmak için:
 
 ```bash
 npm run tauri build
 ```
 
-## Project structure
+Çıktı dosyaları `src-tauri/target/release/bundle/` klasöründe oluşacaktır.
 
-- `src/components`: UI sections (header, capture canvas, result panel, toast)
-- `src/hooks`: custom hooks (`useTheme`)
-- `src/lib`: helpers (`image` crop utilities)
-- `src-tauri/src/commands`: Rust commands (`capture`, `ocr`)
+## ⌨️ Kısayollar
 
-## Cross-platform notes
+*   **Varsayılan Yakalama:** `Ctrl + Alt + Shift + C`
+    *   *Bu kısayol Ayarlar menüsünden değiştirilebilir.*
+*   **İptal (Seçim Modunda):** `ESC`
 
-- macOS: app may need Screen Recording permission.
-- Windows: capture uses physical pixels. UI selection is scaled to captured image size for DPI accuracy.
-- Linux: Wayland sessions may restrict direct capture. X11 is usually more reliable.
+## 🤝 Katkıda Bulunma
 
-## Known limitations
+1.  Bu depoyu "Fork"layın.
+2.  Yeni bir özellik dalı oluşturun (`git checkout -b ozellik/HarikaOzellik`).
+3.  Değişikliklerinizi kaydedin (`git commit -m 'feat: Harika özellik eklendi'`).
+4.  Dalınızı uzak sunucuya gönderin (`git push origin ozellik/HarikaOzellik`).
+5.  Bir "Pull Request" oluşturun.
 
-- Current capture command grabs the first detected monitor.
-- OCR depends on `tesseract` executable being installed and available in PATH.
-- Linux Wayland behavior can vary by compositor and portal setup.
+## 📄 Lisans
 
-## Suggested next steps
+Bu proje MIT lisansı altında dağıtılmaktadır. Daha fazla bilgi için `LICENSE` dosyasına bakın.
 
-- Add global hotkey for instant capture.
-- Store OCR history in local database.
-- Add per-language presets and auto language detection.
-- Add export options (`.txt`, `.md`).
+---
+**Geliştirici:** Ekrem Kılınç
+**Telif Hakkı:** © 2026 Tüm Hakları Saklıdır.
