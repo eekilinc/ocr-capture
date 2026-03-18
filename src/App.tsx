@@ -700,6 +700,7 @@ function App() {
                 selection={selection}
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                qrResult={qrResult}
             />
         )}
       </section>
