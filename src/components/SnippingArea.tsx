@@ -70,7 +70,7 @@ export const SnippingArea = ({
             fontSize: '0.8rem',
             fontFamily: 'var(--font-mono)'
         }}>
-            Kısayol: <span style={{ color: 'var(--text-primary)' }}>CTRL + ALT + SHIFT + C</span>
+            Kısayol: <span style={{ color: 'var(--text-primary)' }}>CTRL + ALT + SHIFT + O</span>
         </div>
       </div>
     );

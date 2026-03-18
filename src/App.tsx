@@ -23,8 +23,8 @@ function App() {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState<number | null>(null);
   
-  // Default shortcut updated to avoid system conflicts
-  const [currentShortcut, setCurrentShortcut] = useState("Control+Alt+Shift+C");
+  // Default shortcut updated to avoid system conflicts (O for OCR)
+  const [currentShortcut, setCurrentShortcut] = useState("Control+Alt+Shift+O");
 
   const [captureImage, setCaptureImage] = useState<string | null>(null);
   const [captureSize, setCaptureSize] = useState({ width: 0, height: 0 });

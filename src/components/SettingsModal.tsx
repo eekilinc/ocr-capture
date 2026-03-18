@@ -25,7 +25,7 @@ export const SettingsModal = ({
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(false);
   const [store, setStore] = useState<Store | null>(null);
-  const [currentShortcut, setCurrentShortcut] = useState("Control+Alt+Shift+C");
+  const [currentShortcut, setCurrentShortcut] = useState("Control+Alt+Shift+O");
   const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
@@ -63,32 +63,45 @@ export const SettingsModal = ({
           e.preventDefault();
           e.stopPropagation();
 
+          if (e.repeat) return; // Ignore key repeats
+
           const isMac = navigator.userAgent.includes("Mac");
 
           const modifiers = [];
+          // Standardize modifier order: Ctrl -> Alt -> Shift -> Meta
           if (e.ctrlKey) modifiers.push("Control");
-          if (e.shiftKey) modifiers.push("Shift");
           if (e.altKey) modifiers.push(isMac ? "Option" : "Alt");
+          if (e.shiftKey) modifiers.push("Shift");
           if (e.metaKey) modifiers.push(isMac ? "Command" : "Super");
 
           let key = e.key;
-          if (["Control", "Alt", "Shift", "Meta", "Command", "Option"].includes(key)) return;
           
+          // Ignore if the pressed key is just a modifier
+          if (["Control", "Alt", "Shift", "Meta", "Command", "Option", "Super"].includes(key)) return;
+
+          // Map special keys to Tauri format
           if (key === " ") key = "Space";
-          if (key.length === 1) key = key.toUpperCase();
+          else if (key.length === 1) key = key.toUpperCase();
+          else if (key.startsWith("Arrow")) key = key; // Keep ArrowUp, ArrowDown as is
+          else if (key === "Escape") {
+             setIsRecording(false); // Cancel recording
+             return;
+          }
 
           const shortcutString = [...modifiers, key].join("+");
           
-          console.log("Recorded shortcut:", shortcutString);
-          setCurrentShortcut(shortcutString);
-          setIsRecording(false);
-          
-          if (store) {
-              await store.set("global-shortcut", shortcutString);
-              await store.save();
+          if (shortcutString.length > 0) {
+              console.log("Recorded shortcut:", shortcutString);
+              setCurrentShortcut(shortcutString);
+              setIsRecording(false);
               
-              if (onShortcutUpdate) {
-                onShortcutUpdate(shortcutString);
+              if (store) {
+                  await store.set("global-shortcut", shortcutString);
+                  await store.save();
+                  
+                  if (onShortcutUpdate) {
+                    onShortcutUpdate(shortcutString);
+                  }
               }
           }
       };
