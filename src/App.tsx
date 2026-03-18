@@ -578,7 +578,7 @@ function App() {
       // But for now, I'll just apply the same logic as handleExtractText for consistency.
       
       const result = await invoke<OcrResponse>("run_ocr", {
-        input: { imageBase64: processedBase64, languages: ocrLanguages },
+        input: { imageBase64: base64Only, languages: ocrLanguages },
       });
 
       setOcrText(result.text);
