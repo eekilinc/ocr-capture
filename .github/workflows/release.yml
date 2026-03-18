@@ -45,7 +45,15 @@ jobs:
             patchelf \
             tesseract-ocr \
             tesseract-ocr-tur \
-            tesseract-ocr-eng
+            tesseract-ocr-eng \
+            pkg-config \
+            libclang-dev \
+            libxcb1-dev \
+            libxrandr-dev \
+            libdbus-1-dev \
+            libpipewire-0.3-dev \
+            libwayland-dev \
+            libegl-dev
 
       # ── MACOS ──────────────────────────────────────────────────────────────
       - name: macOS Tesseract kur
@@ -99,6 +107,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUST_BACKTRACE: '1'
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Metin Yakalayıcı v__VERSION__'
