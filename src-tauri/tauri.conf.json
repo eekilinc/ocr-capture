@@ -42,12 +42,11 @@
     "windows": {
       "digestAlgorithm": "sha256",
       "certificateThumbprint": null,
-      "wix": {}
-    },
-    "nsis": {
-      "displayLanguageSelector": false,
-      "languages": ["Turkish"],
-      "installMode": "perMachine"
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["Turkish"],
+        "installMode": "perMachine"
+      }
     }
   }
 }
