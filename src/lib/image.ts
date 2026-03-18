@@ -39,6 +39,11 @@ export const cropImageToBase64 = async (
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
+  // Gri tonlamaya cevir (Grayscale) + Filters - GPU hizlandirmali
+  const contrastPercent = (filters?.contrast ?? 1.0) * 100;
+  const invertVal = filters?.invert ? 100 : 0;
+  ctx.filter = `grayscale(100%) invert(${invertVal}%) contrast(${contrastPercent}%)`;
+
   // Arka plani beyaz yap (OCR icin iyidir)
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, dWidth, dHeight);
@@ -54,31 +59,6 @@ export const cropImageToBase64 = async (
     dWidth,
     dHeight,
   );
-
-  // Gri tonlamaya cevir (Grayscale) + Filters
-  const imageData = ctx.getImageData(0, 0, dWidth, dHeight);
-  const data = imageData.data;
-  
-  const contrast = filters?.contrast ?? 1.0;
-  const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
-  
-  for (let i = 0; i < data.length; i += 4) {
-    // 1. Grayscale
-    let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-    
-    // 2. Invert if needed
-    if (filters?.invert) {
-        avg = 255 - avg;
-    }
-    
-    // 3. Contrast if needed
-    if (contrast !== 1.0) {
-        avg = factor * (avg - 128) + 128;
-    }
-    
-    data[i] = data[i + 1] = data[i + 2] = avg;
-  }
-  ctx.putImageData(imageData, 0, 0);
 
   const dataUrl = canvas.toDataURL("image/png");
   // OCR icin sadece base64 verisi gerekiyorsa ayiralim. 
