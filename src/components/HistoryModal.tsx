@@ -49,12 +49,15 @@ export const HistoryModal = ({
 
         <div className="modal-body history-list">
           {history.length === 0 ? (
-            <div className="empty-state">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              <p>Henüz geçmiş kaydı yok.</p>
+            <div className="history-empty-state">
+              <div className="history-empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              </div>
+              <p className="history-empty-title">Geçmiş boş</p>
+              <p className="history-empty-desc">Ekrandan metin yakaladıkça sonuçlar burada görünecek.</p>
             </div>
           ) : (
             history.map((item) => (

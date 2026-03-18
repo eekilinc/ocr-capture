@@ -32,45 +32,47 @@ export const SnippingArea = ({
 
   if (!imageSrc) {
     return (
-      <div className="capture-container empty-state" style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          height: '100%',
-          background: 'var(--modal-sidebar-bg)',
-          border: '2px dashed var(--panel-border)',
-          borderRadius: 'var(--radius-md)',
-          color: 'var(--text-tertiary)'
-      }}>
-        <div style={{ 
-            background: 'rgba(99, 102, 241, 0.1)', 
-            padding: '1.5rem', 
-            borderRadius: '50%',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-        }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                <circle cx="12" cy="13" r="4"></circle>
-            </svg>
+      <div className="capture-empty-state">
+        <div className="capture-empty-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
         </div>
-        <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontWeight: 600 }}>Yakalamaya Hazır</h3>
-        <p style={{ margin: 0, opacity: 0.7, maxWidth: '280px', lineHeight: '1.6' }}>
-            Ekran görüntüsü almak için <strong style={{ color: 'var(--primary-color)' }}>Yeni Yakalama</strong> butonuna basın veya kısayolu kullanın.
+
+        <h3 className="capture-empty-title">Yakalamaya Hazır</h3>
+        <p className="capture-empty-desc">
+          Metni çıkarmak istediğiniz ekran alanını seçmek için aşağıdaki butona tıklayın ya da kısayolu kullanın.
         </p>
-        <div style={{ 
-            marginTop: '2rem', 
-            padding: '0.5rem 1rem', 
-            background: 'rgba(255,255,255,0.05)', 
-            borderRadius: '8px', 
-            border: '1px solid var(--panel-border)',
-            fontSize: '0.8rem',
-            fontFamily: 'var(--font-mono)'
-        }}>
-            Kısayol: <span style={{ color: 'var(--text-primary)' }}>CTRL + ALT + SHIFT + O</span>
+
+        <div className="capture-steps">
+          <div className="capture-step">
+            <span className="step-number">1</span>
+            <span className="step-label">Yeni Yakalama'ya bas</span>
+          </div>
+          <div className="capture-step-arrow">→</div>
+          <div className="capture-step">
+            <span className="step-number">2</span>
+            <span className="step-label">Alanı sürükleyerek seç</span>
+          </div>
+          <div className="capture-step-arrow">→</div>
+          <div className="capture-step">
+            <span className="step-number">3</span>
+            <span className="step-label">Metni al</span>
+          </div>
+        </div>
+
+        <div className="capture-shortcut-hint">
+          <span className="shortcut-label">Kısayol</span>
+          <div className="kbd-group">
+            <kbd>Ctrl</kbd>
+            <span className="kbd-sep">+</span>
+            <kbd>Alt</kbd>
+            <span className="kbd-sep">+</span>
+            <kbd>Shift</kbd>
+            <span className="kbd-sep">+</span>
+            <kbd>O</kbd>
+          </div>
         </div>
       </div>
     );

@@ -24,7 +24,7 @@ function App() {
   const [selectedMonitor, setSelectedMonitor] = useState<number | null>(null);
   
   // Default shortcut updated to avoid system conflicts (O for OCR)
-  const [currentShortcut, setCurrentShortcut] = useState("Control+Alt+Shift+O");
+  const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+F9");
 
   const [captureImage, setCaptureImage] = useState<string | null>(null);
   const [captureSize, setCaptureSize] = useState({ width: 0, height: 0 });
@@ -36,8 +36,8 @@ function App() {
   const [ocrBusy, setOcrBusy] = useState(false);
   const [toast, setToast] = useState<ToastState>(DEFAULT_TOAST);
   
-  // Yeni: Snipping Modu
   const [isSnippingMode, setIsSnippingMode] = useState(false);
+  const [capturePhase, setCapturePhase] = useState<'idle' | 'capturing' | 'selecting' | 'ocr'>('idle');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -140,57 +140,66 @@ function App() {
       selectedMonitorRef.current = selectedMonitor;
   }, [selectedMonitor]);
 
-  // Handle Global Shortcut
+  const handleNewCaptureRef = useRef<() => Promise<void>>(async () => {});
+  const previousShortcutRef = useRef<string>("");
+
+  // Handle Global Shortcut — unregister old, register new on every change
   useEffect(() => {
-    let unregisterFn: (() => void) | undefined;
+    if (!currentShortcut) return;
+
+    const previousShortcut = previousShortcutRef.current;
+    previousShortcutRef.current = currentShortcut;
 
     const setupShortcut = async () => {
+      // 1. Unregister the previous shortcut if it was different
+      if (previousShortcut && previousShortcut !== currentShortcut) {
         try {
-            // Unregister first if needed
-            try {
-                const registered = await isRegistered(currentShortcut);
-                if (registered) {
-                    await unregister(currentShortcut);
-                }
-            } catch (e) {
-                console.warn("Unregister warning:", e);
-            }
-
-            await register(currentShortcut, async (event) => {
-                if (event.state === "Pressed") {
-                    console.log("Shortcut triggered:", currentShortcut);
-                    // Force run inside React context
-                    if (!captureBusyRef.current) {
-                        handleNewCaptureRef.current();
-                    }
-                }
-            });
-            console.log("Registered shortcut:", currentShortcut);
-
-            unregisterFn = () => {
-                unregister(currentShortcut).catch(e => console.error("Failed to unregister", e));
-            };
-        } catch (err) {
-            console.error("Shortcut registration failed:", err);
-            const msg = err instanceof Error ? err.message : String(err);
-            showToast("error", `Kısayol hatası: ${msg}`);
+          await unregister(previousShortcut);
+          console.log("Unregistered previous shortcut:", previousShortcut);
+        } catch (e) {
+          console.warn("Unregister previous shortcut warning:", e);
         }
+      }
+
+      // 2. Unregister current shortcut if already registered (hot-reload guard)
+      try {
+        const alreadyRegistered = await isRegistered(currentShortcut);
+        if (alreadyRegistered) {
+          await unregister(currentShortcut);
+        }
+      } catch (e) {
+        console.warn("isRegistered check warning:", e);
+      }
+
+      // 3. Register new shortcut
+      try {
+        await register(currentShortcut, async (event) => {
+          if (event.state === "Pressed") {
+            if (!captureBusyRef.current) {
+              handleNewCaptureRef.current();
+            }
+          }
+        });
+        console.log("Registered shortcut:", currentShortcut);
+      } catch (err) {
+        console.error("Shortcut registration failed:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        showToast("error", `Kısayol kaydedilemedi: ${msg}`);
+      }
     };
 
-    if (currentShortcut) {
-        setupShortcut();
-    }
+    setupShortcut();
 
     return () => {
-        if (unregisterFn) unregisterFn();
+      unregister(currentShortcut).catch(() => {});
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentShortcut]);
-
-  const handleNewCaptureRef = useRef<() => Promise<void>>(async () => {});
 
   const handleNewCapture = async () => {
     if (captureBusy) return;
     setCaptureBusy(true);
+    setCapturePhase('capturing');
     
     // 1. Pencereyi gizle
     const appWindow = getCurrentWindow();
@@ -218,6 +227,7 @@ function App() {
 
         // 4. Snipping modunu ac ve pencereyi tam ekran goster
         setIsSnippingMode(true);
+        setCapturePhase('selecting');
         await appWindow.setFullscreen(true);
         
         // Eger spesifik bir monitor secildiyse pencereyi oraya tasi
@@ -237,6 +247,7 @@ function App() {
         const message = error instanceof Error ? error.message : String(error);
         showToast("error", `Yakalama başarısız: ${message}`);
         setCaptureBusy(false);
+        setCapturePhase('idle');
         await appWindow.show(); // Hata olsa bile goster
       }
     }, 350); // 350ms bekleme
@@ -249,6 +260,7 @@ function App() {
   const handleSelectionComplete = async (rect: Rect) => {
     // Secim tamamlandiginda otomatik olarak kirpma ve OCR baslat
     setIsSnippingMode(false);
+    setCapturePhase('ocr');
     const appWindow = getCurrentWindow();
     await appWindow.setFullscreen(false);
     
@@ -311,6 +323,7 @@ function App() {
     } finally {
       setOcrBusy(false);
       setCaptureBusy(false); // Yakalama sureci burada tam bitiyor
+      setCapturePhase('idle');
     }
   };
 
@@ -333,6 +346,7 @@ function App() {
     const handleKeyDown = async (e: KeyboardEvent) => {
         if (e.key === "Escape" && isSnippingMode) {
             setIsSnippingMode(false);
+            setCapturePhase('idle');
             const appWindow = getCurrentWindow();
             await appWindow.setFullscreen(false);
             setCaptureBusy(false);
@@ -396,11 +410,31 @@ function App() {
            {!isSnippingMode && (
                <div className="panel-header">
                   <h2 className="panel-title">Yakalama Alanı</h2>
-                  {selection && (
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                      {Math.round(selection.width)} x {Math.round(selection.height)} px
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    {capturePhase !== 'idle' && (
+                      <div className="progress-steps">
+                        <div className={`progress-step ${capturePhase === 'capturing' ? 'active' : (capturePhase === 'selecting' || capturePhase === 'ocr') ? 'done' : ''}`}>
+                          <span className="progress-step-dot"></span>
+                          <span className="progress-step-label">Yakalama</span>
+                        </div>
+                        <div className="progress-step-line"></div>
+                        <div className={`progress-step ${capturePhase === 'selecting' ? 'active' : capturePhase === 'ocr' ? 'done' : ''}`}>
+                          <span className="progress-step-dot"></span>
+                          <span className="progress-step-label">Seçim</span>
+                        </div>
+                        <div className="progress-step-line"></div>
+                        <div className={`progress-step ${capturePhase === 'ocr' ? 'active' : ''}`}>
+                          <span className="progress-step-dot"></span>
+                          <span className="progress-step-label">OCR</span>
+                        </div>
+                      </div>
+                    )}
+                    {selection && capturePhase === 'idle' && (
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                        {Math.round(selection.width)} x {Math.round(selection.height)} px
+                      </span>
+                    )}
+                  </div>
                </div>
            )}
            
@@ -435,7 +469,8 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="0.1.0"
+        appVersion="0.2.0"
+        currentShortcut={currentShortcut}
         onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
       />
 

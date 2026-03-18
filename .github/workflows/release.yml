@@ -2,12 +2,58 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. main'e push'ta tauri.conf.json'dan versiyon oku, tag yoksa oluştur
+  # ─────────────────────────────────────────────────────────────────────────────
+  create-tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_created: ${{ steps.push_tag.outputs.tag_created }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Versiyonu tauri.conf.json'dan oku
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Versiyon: $VERSION"
+
+      - name: Tag zaten var mı kontrol et ve oluştur
+        id: push_tag
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG zaten mevcut, atlanıyor."
+            echo "tag_created=false" >> $GITHUB_OUTPUT
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Tag $TAG oluşturuldu ve push edildi."
+            echo "tag_created=true" >> $GITHUB_OUTPUT
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. Tag push'ta (v*) platformlara göre derleme ve release
+  # ─────────────────────────────────────────────────────────────────────────────
   release:
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     strategy:
@@ -33,7 +79,7 @@ jobs:
       - name: Depoyu çek
         uses: actions/checkout@v4
 
-      # ── LINUX ──────────────────────────────────────────────────────────────
+      # ── LINUX ────────────────────────────────────────────────────────────────
       - name: Linux sistem bağımlılıklarını kur
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -55,12 +101,12 @@ jobs:
             libwayland-dev \
             libegl-dev
 
-      # ── MACOS ──────────────────────────────────────────────────────────────
+      # ── MACOS ────────────────────────────────────────────────────────────────
       - name: macOS Tesseract kur
         if: matrix.platform == 'macos-latest'
         run: brew install tesseract tesseract-lang
 
-      # ── WINDOWS ────────────────────────────────────────────────────────────
+      # ── WINDOWS ──────────────────────────────────────────────────────────────
       - name: Windows Tesseract kur (Chocolatey)
         if: matrix.platform == 'windows-latest'
         shell: powershell
@@ -82,7 +128,7 @@ jobs:
             -Uri "https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata" `
             -OutFile "$tessdata\eng.traineddata"
 
-      # ── NODE & RUST ─────────────────────────────────────────────────────────
+      # ── NODE & RUST ──────────────────────────────────────────────────────────
       - name: Node.js kur
         uses: actions/setup-node@v4
         with:
@@ -99,9 +145,16 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      # ── BUILD ──────────────────────────────────────────────────────────────
+      # ── BUILD ────────────────────────────────────────────────────────────────
       - name: Frontend bağımlılıklarını yükle
         run: npm install
+
+      - name: Versiyonu oku
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Uygulamayı derle ve Release oluştur
         uses: tauri-apps/tauri-action@v0
@@ -109,21 +162,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: '1'
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Metin Yakalayıcı v__VERSION__'
+          tagName: v${{ steps.get_version.outputs.version }}
+          releaseName: 'Metin Yakalayıcı v${{ steps.get_version.outputs.version }}'
           releaseBody: |
-            ## Kurulum
+            ## Metin Yakalayıcı v${{ steps.get_version.outputs.version }}
+
+            ### Kurulum
 
             | Platform | Dosya | Açıklama |
             |---|---|---|
             | Windows | `*_x64-setup.exe` | NSIS Kurulum Sihirbazı (Önerilen) |
-            | Windows | `*.msi` | MSI Kurulum Paketi |
             | macOS (Apple Silicon) | `*_aarch64.dmg` | macOS Apple Silicon |
             | macOS (Intel) | `*_x64.dmg` | macOS Intel |
             | Linux | `*.deb` | Debian/Ubuntu Paketi |
             | Linux | `*.AppImage` | Taşınabilir Linux Uygulaması |
 
             > **Not:** Windows'ta OCR özelliğini kullanabilmek için [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki) kurulu olması gerekmektedir.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
