@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "deb", "dmg", "app"],
+    "targets": "all",
     "copyright": "© 2026 Ekrem Kılınç",
     "shortDescription": "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı.",
     "longDescription": "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı.",

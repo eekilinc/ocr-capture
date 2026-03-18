@@ -15,14 +15,17 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            args: '--target x86_64-pc-windows-msvc --bundles nsis,msi'
-            rust-target: x86_64-pc-windows-msvc
+            args: '--target x86_64-pc-windows-msvc'
+            rust-targets: 'x86_64-pc-windows-msvc'
           - platform: macos-latest
-            args: '--target universal-apple-darwin --bundles dmg,app'
-            rust-target: ''
+            args: '--target aarch64-apple-darwin'
+            rust-targets: 'aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            rust-targets: 'x86_64-apple-darwin'
           - platform: ubuntu-22.04
-            args: '--target x86_64-unknown-linux-gnu --bundles deb,appimage'
-            rust-target: x86_64-unknown-linux-gnu
+            args: ''
+            rust-targets: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -48,12 +51,6 @@ jobs:
       - name: macOS Tesseract kur
         if: matrix.platform == 'macos-latest'
         run: brew install tesseract tesseract-lang
-
-      - name: macOS evrensel hedefleri ekle
-        if: matrix.platform == 'macos-latest'
-        run: |
-          rustup target add aarch64-apple-darwin
-          rustup target add x86_64-apple-darwin
 
       # ── WINDOWS ────────────────────────────────────────────────────────────
       - name: Windows Tesseract kur (Chocolatey)
@@ -81,13 +78,13 @@ jobs:
       - name: Node.js kur
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: lts/*
           cache: 'npm'
 
       - name: Rust araç zincirini kur
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust-target }}
+          targets: ${{ matrix.rust-targets }}
 
       - name: Rust önbelleği
         uses: swatinem/rust-cache@v2
@@ -99,24 +96,25 @@ jobs:
         run: npm install
 
       - name: Uygulamayı derle ve Release oluştur
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Metin Yakalayıcı v__VERSION__'
           releaseBody: |
-            ## 📦 Kurulum
+            ## Kurulum
 
             | Platform | Dosya | Açıklama |
             |---|---|---|
             | Windows | `*_x64-setup.exe` | NSIS Kurulum Sihirbazı (Önerilen) |
             | Windows | `*.msi` | MSI Kurulum Paketi |
-            | macOS | `*.dmg` | macOS Disk İmajı |
+            | macOS (Apple Silicon) | `*_aarch64.dmg` | macOS Apple Silicon |
+            | macOS (Intel) | `*_x64.dmg` | macOS Intel |
             | Linux | `*.deb` | Debian/Ubuntu Paketi |
             | Linux | `*.AppImage` | Taşınabilir Linux Uygulaması |
 
-            > **Not:** Windows'ta uygulamanın OCR özelliğini kullanabilmesi için [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki)'ın kurulu olması gerekmektedir.
+            > **Not:** Windows'ta OCR özelliğini kullanabilmek için [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki) kurulu olması gerekmektedir.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
