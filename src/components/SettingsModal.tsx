@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Store } from "@tauri-apps/plugin-store";
 
@@ -363,12 +363,12 @@ export const SettingsModal = ({
                   <span className="shortcut-display-label">Mevcut Kısayol</span>
                   <div className="kbd-group">
                     {displayKeys.map((key, i) => (
-                      <>
-                        <kbd key={key + i} className={isRecording ? "kbd-recording" : ""}>{key}</kbd>
+                      <Fragment key={i}>
+                        <kbd className={isRecording ? "kbd-recording" : ""}>{key}</kbd>
                         {i < displayKeys.length - 1 && (
-                          <span key={"sep" + i} className="kbd-sep">+</span>
+                          <span className="kbd-sep">+</span>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </div>
                   {isRecording && (

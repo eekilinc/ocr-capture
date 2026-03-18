@@ -143,46 +143,49 @@ function App() {
   const handleNewCaptureRef = useRef<() => Promise<void>>(async () => {});
   const previousShortcutRef = useRef<string>("");
 
-  // Handle Global Shortcut — unregister old, register new on every change
+  // Handle Global Shortcut — unregister old, register new on every change.
+  // NOTE: useEffect cleanup runs AFTER the new effect fires, so we cannot rely
+  // on it to unregister the previous shortcut. We track the previous value in a
+  // ref and handle the full transition (unregister-old → unregister-new-if-stale
+  // → register-new) in a single async sequence inside the effect itself.
   useEffect(() => {
     if (!currentShortcut) return;
 
     const previousShortcut = previousShortcutRef.current;
     previousShortcutRef.current = currentShortcut;
 
+    let cancelled = false;
+
     const setupShortcut = async () => {
-      // 1. Unregister the previous shortcut if it was different
+      // 1. Unregister the previous shortcut if different (shortcut changed)
       if (previousShortcut && previousShortcut !== currentShortcut) {
         try {
           await unregister(previousShortcut);
-          console.log("Unregistered previous shortcut:", previousShortcut);
-        } catch (e) {
-          console.warn("Unregister previous shortcut warning:", e);
+        } catch {
+          // ignore — may not have been registered yet
         }
       }
 
-      // 2. Unregister current shortcut if already registered (hot-reload guard)
+      // 2. Unregister the current shortcut if already registered (hot-reload / StrictMode guard)
       try {
-        const alreadyRegistered = await isRegistered(currentShortcut);
-        if (alreadyRegistered) {
+        if (await isRegistered(currentShortcut)) {
           await unregister(currentShortcut);
         }
-      } catch (e) {
-        console.warn("isRegistered check warning:", e);
+      } catch {
+        // ignore
       }
 
-      // 3. Register new shortcut
+      if (cancelled) return;
+
+      // 3. Register the new shortcut
       try {
         await register(currentShortcut, async (event) => {
-          if (event.state === "Pressed") {
-            if (!captureBusyRef.current) {
-              handleNewCaptureRef.current();
-            }
+          if (event.state === "Pressed" && !captureBusyRef.current) {
+            handleNewCaptureRef.current();
           }
         });
-        console.log("Registered shortcut:", currentShortcut);
       } catch (err) {
-        console.error("Shortcut registration failed:", err);
+        if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
         showToast("error", `Kısayol kaydedilemedi: ${msg}`);
       }
@@ -191,6 +194,7 @@ function App() {
     setupShortcut();
 
     return () => {
+      cancelled = true;
       unregister(currentShortcut).catch(() => {});
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
