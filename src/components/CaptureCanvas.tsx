@@ -9,6 +9,7 @@ type CaptureCanvasProps = {
   loading: boolean;
   isSnippingMode?: boolean;
   onSelectionComplete?: (rect: Rect) => void;
+  currentShortcut?: string;
 };
 
 // Wrapper to adapt old props to new SnippingArea
@@ -17,7 +18,8 @@ export const CaptureCanvas = ({
     selection, 
     onSelectionChange,
     isSnippingMode,
-    onSelectionComplete
+    onSelectionComplete,
+    currentShortcut
 }: CaptureCanvasProps) => {
   return (
     <SnippingArea 
@@ -26,6 +28,7 @@ export const CaptureCanvas = ({
         onSelectionChange={onSelectionChange}
         isSnippingMode={isSnippingMode}
         onSelectionComplete={onSelectionComplete}
+        currentShortcut={currentShortcut}
     />
   );
 };

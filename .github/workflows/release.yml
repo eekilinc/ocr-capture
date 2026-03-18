@@ -4,16 +4,13 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
-  # 1. main'e push'ta tauri.conf.json'dan versiyon oku, tag yoksa oluştur
+  # 1. tauri.conf.json'dan versiyon oku; tag yoksa oluştur
   # ─────────────────────────────────────────────────────────────────────────────
   create-tag:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -32,12 +29,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Versiyon: $VERSION"
 
-      - name: Tag zaten var mı kontrol et ve oluştur
+      - name: Tag yoksa oluştur ve push et
         id: push_tag
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          TAG="v$VERSION"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
+          TAG="v${{ steps.get_version.outputs.version }}"
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
             echo "Tag $TAG zaten mevcut, atlanıyor."
             echo "tag_created=false" >> $GITHUB_OUTPUT
           else
@@ -45,15 +41,16 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$TAG"
             git push origin "$TAG"
-            echo "Tag $TAG oluşturuldu ve push edildi."
+            echo "Tag $TAG oluşturuldu."
             echo "tag_created=true" >> $GITHUB_OUTPUT
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Tag push'ta (v*) platformlara göre derleme ve release
+  # 2. Tag yeni oluşturulduysa platformlara göre derleme ve release
   # ─────────────────────────────────────────────────────────────────────────────
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: create-tag
+    if: needs.create-tag.outputs.tag_created == 'true'
     permissions:
       contents: write
     strategy:
@@ -149,23 +146,16 @@ jobs:
       - name: Frontend bağımlılıklarını yükle
         run: npm install
 
-      - name: Versiyonu oku
-        id: get_version
-        shell: bash
-        run: |
-          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Uygulamayı derle ve Release oluştur
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: '1'
         with:
-          tagName: v${{ steps.get_version.outputs.version }}
-          releaseName: 'Metin Yakalayıcı v${{ steps.get_version.outputs.version }}'
+          tagName: v${{ needs.create-tag.outputs.version }}
+          releaseName: 'Metin Yakalayıcı v${{ needs.create-tag.outputs.version }}'
           releaseBody: |
-            ## Metin Yakalayıcı v${{ steps.get_version.outputs.version }}
+            ## Metin Yakalayıcı v${{ needs.create-tag.outputs.version }}
 
             ### Kurulum
 

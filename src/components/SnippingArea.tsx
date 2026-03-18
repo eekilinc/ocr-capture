@@ -11,14 +11,27 @@ type SnippingAreaProps = {
   onSelectionChange: (rect: Rect | null) => void;
   onSelectionComplete?: (rect: Rect) => void; // Yeni özellik: Secim bitince tetiklenir
   isSnippingMode?: boolean; // Yeni ozellik: Tam ekran modu icin stil ayari
+  currentShortcut?: string;
 };
+
+// "Control+Shift+F9" → ["Ctrl", "Shift", "F9"]
+function shortcutToKeys(shortcut: string): string[] {
+  return shortcut.split("+").map((k) => {
+    if (k === "Control") return "Ctrl";
+    if (k === "Alt") return "Alt";
+    if (k === "Shift") return "Shift";
+    if (k === "Meta") return "Win";
+    return k;
+  });
+}
 
 export const SnippingArea = ({ 
     imageSrc, 
     selection, 
     onSelectionChange, 
     onSelectionComplete,
-    isSnippingMode = false 
+    isSnippingMode = false,
+    currentShortcut = "Control+Shift+F9"
 }: SnippingAreaProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -65,13 +78,12 @@ export const SnippingArea = ({
         <div className="capture-shortcut-hint">
           <span className="shortcut-label">Kısayol</span>
           <div className="kbd-group">
-            <kbd>Ctrl</kbd>
-            <span className="kbd-sep">+</span>
-            <kbd>Alt</kbd>
-            <span className="kbd-sep">+</span>
-            <kbd>Shift</kbd>
-            <span className="kbd-sep">+</span>
-            <kbd>O</kbd>
+            {shortcutToKeys(currentShortcut).map((key, i, arr) => (
+              <span key={i} style={{ display: "contents" }}>
+                <kbd>{key}</kbd>
+                {i < arr.length - 1 && <span className="kbd-sep">+</span>}
+              </span>
+            ))}
           </div>
         </div>
       </div>

@@ -439,15 +439,16 @@ function App() {
            )}
            
            <div className="panel-content" style={{ padding: 0, background: isSnippingMode ? '#000' : 'var(--panel-bg)', height: isSnippingMode ? '100%' : 'auto' }}>
-              <CaptureCanvas
-                imageSrc={captureImage}
-                naturalSize={captureSize}
-                selection={selection}
-                onSelectionChange={setSelection}
-                loading={captureBusy && !captureImage} // Image geldiyse loading degildir
-                isSnippingMode={isSnippingMode}
-                onSelectionComplete={handleSelectionComplete}
-              />
+               <CaptureCanvas
+                 imageSrc={captureImage}
+                 naturalSize={captureSize}
+                 selection={selection}
+                 onSelectionChange={setSelection}
+                 loading={captureBusy && !captureImage} // Image geldiyse loading degildir
+                 isSnippingMode={isSnippingMode}
+                 onSelectionComplete={handleSelectionComplete}
+                 currentShortcut={currentShortcut}
+               />
            </div>
         </article>
 
@@ -469,7 +470,7 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="0.2.0"
+        appVersion="0.2.1"
         currentShortcut={currentShortcut}
         onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
       />
