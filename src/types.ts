@@ -14,9 +14,19 @@ export type CaptureResponse = {
   platformNote: string;
 };
 
+export type OcrWord = {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  conf: number;
+};
+
 export type OcrResponse = {
   text: string;
   engine: string;
+  words: OcrWord[];
 };
 
 export type MonitorInfo = {
@@ -34,6 +44,11 @@ export type HistoryItem = {
   imageBase64: string;
   text: string;
   date: string;
+};
+
+export type ImageFilters = {
+  invert: boolean;
+  contrast: number; // 1.0 is neutral
 };
 
 export type ToastState = {

@@ -55,7 +55,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::capture::capture_screen,
             commands::capture::get_monitors,
-            commands::ocr::run_ocr
+            commands::ocr::run_ocr,
+            commands::ocr::list_ocr_languages
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

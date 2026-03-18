@@ -15,10 +15,22 @@ pub struct OcrInput {
     pub languages: Option<String>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrWord {
+    pub text: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub conf: f32,
+}
+
 #[derive(Debug, Serialize)]
 pub struct OcrResponse {
     pub text: String,
     pub engine: String,
+    pub words: Vec<OcrWord>,
 }
 
 fn resolve_tesseract_binary() -> Result<PathBuf, String> {
@@ -118,6 +130,45 @@ fn temp_png_path() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
+pub fn list_ocr_languages() -> Result<Vec<String>, String> {
+    let tesseract_bin = resolve_tesseract_binary()?;
+    let mut langs: Vec<String> = get_installed_languages(&tesseract_bin)
+        .into_iter()
+        .filter(|l| l != "osd" && l != "equ") // internal tesseract models, not real languages
+        .collect();
+    langs.sort();
+    Ok(langs)
+}
+
+fn parse_tsv_words(tsv: &str) -> Vec<OcrWord> {
+    tsv.lines()
+        .skip(1) // header satırını atla
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() < 12 {
+                return None;
+            }
+            let level: i32 = cols[0].parse().ok()?;
+            if level != 5 {
+                return None; // 5 = word level
+            }
+            let text = cols[11].trim().to_string();
+            if text.is_empty() {
+                return None;
+            }
+            Some(OcrWord {
+                text,
+                x: cols[6].parse().ok()?,
+                y: cols[7].parse().ok()?,
+                width: cols[8].parse().ok()?,
+                height: cols[9].parse().ok()?,
+                conf: cols[10].parse().unwrap_or(0.0),
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
 pub fn run_ocr(input: OcrInput) -> Result<OcrResponse, String> {
     let tesseract_bin = resolve_tesseract_binary()?;
     let png_path = temp_png_path()?;
@@ -152,9 +203,14 @@ pub fn run_ocr(input: OcrInput) -> Result<OcrResponse, String> {
             )
         })?;
 
-    // Debugging: Print stdout/stderr
-    // println!("STDOUT: {}", String::from_utf8_lossy(&output.stdout));
-    // println!("STDERR: {}", String::from_utf8_lossy(&output.stderr));
+    // TSV pass for word bounding boxes
+    let tsv_result = Command::new(&tesseract_bin)
+        .arg(&png_path)
+        .arg("stdout")
+        .arg("-l")
+        .arg(&lang)
+        .arg("tsv")
+        .output();
 
     let _ = fs::remove_file(&png_path);
 
@@ -175,8 +231,17 @@ pub fn run_ocr(input: OcrInput) -> Result<OcrResponse, String> {
         println!("OCR BASARILI: {} karakter okundu.", text.len());
     }
 
+    let words = match tsv_result {
+        Ok(tsv_output) if tsv_output.status.success() => {
+            let tsv_text = String::from_utf8_lossy(&tsv_output.stdout).to_string();
+            parse_tsv_words(&tsv_text)
+        }
+        _ => vec![],
+    };
+
     Ok(OcrResponse {
         text,
         engine: format!("{} ({lang})", tesseract_bin.display()),
+        words,
     })
 }

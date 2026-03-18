@@ -1,7 +1,6 @@
-// Fix App.tsx to use SnippingArea and remove old classes
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { register, unregister, isRegistered } from "@tauri-apps/plugin-global-shortcut";
@@ -13,8 +12,9 @@ import { StatusToast } from "./components/StatusToast";
 import { SettingsModal } from "./components/SettingsModal";
 import { HistoryModal } from "./components/HistoryModal";
 import { cropImageToBase64 } from "./lib/image";
+import { scanQrCode } from "./lib/qr";
 import { useTheme } from "./hooks/useTheme";
-import type { CaptureResponse, OcrResponse, Rect, ToastState, MonitorInfo, HistoryItem } from "./types";
+import type { CaptureResponse, OcrResponse, OcrWord, Rect, ToastState, MonitorInfo, HistoryItem, ImageFilters } from "./types";
 
 const DEFAULT_TOAST: ToastState = { kind: "hidden", message: "" };
 
@@ -23,14 +23,16 @@ function App() {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState<number | null>(null);
   
-  // Default shortcut updated to avoid system conflicts (O for OCR)
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+F9");
+  const [ocrLanguages, setOcrLanguages] = useState("tur+eng");
 
   const [captureImage, setCaptureImage] = useState<string | null>(null);
   const [captureSize, setCaptureSize] = useState({ width: 0, height: 0 });
   const [selection, setSelection] = useState<Rect | null>(null);
   const [ocrText, setOcrText] = useState("");
   const [ocrEngine, setOcrEngine] = useState("");
+  const [ocrWords, setOcrWords] = useState<OcrWord[]>([]);
+  const [qrResult, setQrResult] = useState<string | null>(null);
   const [lastError, setLastError] = useState("");
   const [captureBusy, setCaptureBusy] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -41,6 +43,10 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [autoCopy, setAutoCopy] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [filters, setFilters] = useState<ImageFilters>({ invert: false, contrast: 1.0 });
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
 
   // Initialize App Settings (Defaults)
   useEffect(() => {
@@ -75,11 +81,47 @@ function App() {
                 if (savedShortcut) {
                     setCurrentShortcut(savedShortcut);
                 }
+
+                // Load OCR languages
+                const savedLangs = await store.get<string>("ocr-languages");
+                if (savedLangs) {
+                    setOcrLanguages(savedLangs);
+                }
                 
                 // Load History
                 const savedHistory = await store.get<HistoryItem[]>("history");
                 if (savedHistory) {
                     setHistory(savedHistory);
+                }
+
+                // Load Auto-Copy
+                const savedAutoCopy = await store.get<boolean>("auto-copy");
+                if (savedAutoCopy !== undefined) {
+                    setAutoCopy(savedAutoCopy);
+                }
+
+                // Load Always-On-Top
+                const savedAlwaysOnTop = await store.get<boolean>("always-on-top");
+                if (savedAlwaysOnTop !== undefined) {
+                    setAlwaysOnTop(savedAlwaysOnTop);
+                    getCurrentWindow().setAlwaysOnTop(savedAlwaysOnTop).catch(() => {});
+                }
+
+                // Pencere boyutu ve konumunu geri yükle
+                try {
+                    const savedW = await store.get<number>("window-width");
+                    const savedH = await store.get<number>("window-height");
+                    const savedX = await store.get<number>("window-x");
+                    const savedY = await store.get<number>("window-y");
+                    const appWindow = getCurrentWindow();
+                    if (savedW && savedH && savedW > 200 && savedH > 100) {
+                        await appWindow.setSize(new PhysicalSize(savedW, savedH));
+                    }
+                    if (savedX !== null && savedY !== null && savedX !== undefined && savedY !== undefined) {
+                        await appWindow.setPosition(new PhysicalPosition(savedX, savedY));
+                    }
+                } catch (e) {
+                    console.error("Pencere konumu geri yüklenemedi:", e);
                 }
             }
         } catch (e) {
@@ -116,6 +158,41 @@ function App() {
     };
     
     initCloseHandler();
+  }, []);
+
+  // Pencere boyutu ve konumunu kaydet (debounced)
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const saveWindowState = async () => {
+      try {
+        const [size, pos] = await Promise.all([
+          appWindow.outerSize(),
+          appWindow.outerPosition(),
+        ]);
+        const store = await Store.load("settings.json");
+        await store.set("window-width", size.width);
+        await store.set("window-height", size.height);
+        await store.set("window-x", pos.x);
+        await store.set("window-y", pos.y);
+        await store.save();
+      } catch {}
+    };
+
+    const schedule = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveWindowState, 600);
+    };
+
+    const unlistenResize = appWindow.onResized(schedule);
+    const unlistenMove = appWindow.onMoved(schedule);
+
+    return () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      unlistenResize.then((fn) => fn());
+      unlistenMove.then((fn) => fn());
+    };
   }, []);
 
   useEffect(() => {
@@ -205,19 +282,22 @@ function App() {
     setCaptureBusy(true);
     setCapturePhase('capturing');
     
-    // 1. Pencereyi gizle
+    // 1. Önce DOM'u şeffaf yap (görsel flash azaltma)
+    document.body.style.opacity = '0';
+    document.body.style.transition = 'opacity 0.1s ease';
+
+    // 2. Pencereyi gizle
     const appWindow = getCurrentWindow();
     try {
         await appWindow.hide();
     } catch (err) {
         console.error("Pencere gizlenemedi:", err);
-        // Devam et, belki gizlenmeden de calisabilir (debug modu vs)
     }
 
-    // 2. Kisa bir sure bekle (pencere animasyonu bitsin)
+    // 3. Kisa bir sure bekle (pencere animasyonu bitsin)
     setTimeout(async () => {
       try {
-        // 3. Ekrani yakala
+        // 4. Ekrani yakala
         const payload = await invoke<CaptureResponse>("capture_screen", {
           monitorId: selectedMonitor,
         });
@@ -227,9 +307,10 @@ function App() {
         setSelection(null);
         setOcrText("");
         setOcrEngine("");
+        setOcrWords([]);
         setLastError("");
 
-        // 4. Snipping modunu ac ve pencereyi tam ekran goster
+        // 5. Snipping modunu ac ve pencereyi tam ekran goster
         setIsSnippingMode(true);
         setCapturePhase('selecting');
         await appWindow.setFullscreen(true);
@@ -238,23 +319,29 @@ function App() {
         if (selectedMonitor !== null) {
              const monitor = monitors.find(m => m.id === selectedMonitor);
              if (monitor) {
-                 await appWindow.setFullscreen(false); // Pozisyon degistirmek icin once fullscreen'den cik
+                 await appWindow.setFullscreen(false);
                  await appWindow.setPosition(new PhysicalPosition(monitor.x, monitor.y));
-                 await appWindow.setFullscreen(true); // Tekrar fullscreen yap
+                 await appWindow.setFullscreen(true);
              }
         }
 
         await appWindow.show();
         await appWindow.setFocus();
 
+        // DOM'u geri görünür yap
+        requestAnimationFrame(() => {
+          document.body.style.opacity = '1';
+        });
+
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         showToast("error", `Yakalama başarısız: ${message}`);
         setCaptureBusy(false);
         setCapturePhase('idle');
-        await appWindow.show(); // Hata olsa bile goster
+        await appWindow.show();
+        document.body.style.opacity = '1';
       }
-    }, 350); // 350ms bekleme
+    }, 250); // 250ms — opacity trick sayesinde daha kısa
   };
 
   useEffect(() => {
@@ -284,22 +371,37 @@ function App() {
     }
 
     setOcrBusy(true);
+    setQrResult(null); // Reset QR on new scan
 
     try {
-      const croppedDataUrl = await cropImageToBase64(captureImage, target);
+      const croppedDataUrl = await cropImageToBase64(captureImage, target, filters);
+      
+      // Attempt QR Scan
+      const qrRes = await scanQrCode(croppedDataUrl);
+      if (qrRes) setQrResult(qrRes);
       // OCR icin sadece base64 kismi lazimsa split yapalim
       const base64Data = croppedDataUrl.split(",")[1];
       
       const result = await invoke<OcrResponse>("run_ocr", {
         input: {
           imageBase64: base64Data,
-          languages: "tur+eng",
+          languages: ocrLanguages,
         },
       });
       setOcrText(result.text);
       setOcrEngine(result.engine);
+      setOcrWords(result.words ?? []);
       setLastError("");
-      showToast("success", "OCR tamamlandı.");
+      if (!result.text.trim()) {
+        showToast("error", "OCR tamamlandı ancak metin bulunamadı.");
+      } else {
+        showToast("success", "OCR tamamlandı.");
+      }
+
+      // Auto-copy if enabled
+      if (autoCopy && result.text.trim()) {
+          navigator.clipboard.writeText(result.text.trim()).catch(() => {});
+      }
 
       // Save to History
       const newItem: HistoryItem = {
@@ -331,14 +433,15 @@ function App() {
     }
   };
 
-  const handleCopy = async () => {
-    if (!ocrText.trim()) {
+  const handleCopy = async (formattedText?: string) => {
+    const textToCopy = formattedText ?? ocrText;
+    if (!textToCopy.trim()) {
       showToast("error", "Kopyalanacak metin yok.");
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(ocrText);
+      await navigator.clipboard.writeText(textToCopy);
       showToast("success", "Metin panoya kopyalandı.");
     } catch {
       showToast("error", "Kopyalama başarısız.");
@@ -387,12 +490,137 @@ function App() {
     setCaptureImage(null);
     setOcrText("");
     setOcrEngine("");
+    setOcrWords([]);
     setLastError("");
     setSelection(null);
   };
 
+  // Panodan görüntü oku ve OCR'a gönder
+  const handleClipboardOcr = async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        showToast("error", "Tarayıcı pano okuma desteği yok.");
+        return;
+      }
+      const items = await navigator.clipboard.read();
+      let found = false;
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((res, rej) => {
+            reader.onload = () => res(reader.result as string);
+            reader.onerror = rej;
+            reader.readAsDataURL(blob);
+          });
+          found = true;
+          await handleImageOcr(dataUrl);
+          break;
+        }
+      }
+      if (!found) {
+        showToast("error", "Panoda görüntü bulunamadı.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast("error", `Pano okunamadı: ${msg}`);
+    }
+  };
+
+  // Dosyadan veya panodan gelen görüntüyü direkt OCR'a gönder
+  const handleImageOcr = async (dataUrl: string) => {
+    if (captureBusy || ocrBusy) return;
+    setCaptureBusy(true);
+    setOcrBusy(true);
+    setQrResult(null); // Reset QR
+    setCapturePhase('ocr');
+
+    // Görseli ekrana yükle (geçmiş için thumbnail)
+    setCaptureImage(dataUrl);
+    setOcrText("");
+    setOcrEngine("");
+    setLastError("");
+
+    try {
+      // Görüntü zaten hazır — sadece 2.5x büyütme + grayscale uygula
+      const img = new Image();
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
+      
+      // Metadata set to state
+      setCaptureSize({ width: img.naturalWidth, height: img.naturalHeight });
+      const scaleFactor = 2.5;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(img.naturalWidth * scaleFactor);
+      canvas.height = Math.floor(img.naturalHeight * scaleFactor);
+      const ctx = canvas.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imageData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        d[i] = d[i + 1] = d[i + 2] = avg;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      const processedBase64 = canvas.toDataURL("image/png");
+      
+      // Attempt QR Scan
+      const qrRes = await scanQrCode(processedBase64);
+      if (qrRes) setQrResult(qrRes);
+
+      const base64Only = processedBase64.split(",")[1];
+      // Note: handleImageOcr currently does its own scaling/grayscale. 
+      // To keep it simple, I'll update it to use cropImageToBase64 for the full image if filters are active.
+      // But for now, I'll just apply the same logic as handleExtractText for consistency.
+      
+      const result = await invoke<OcrResponse>("run_ocr", {
+        input: { imageBase64: processedBase64, languages: ocrLanguages },
+      });
+
+      setOcrText(result.text);
+      setOcrEngine(result.engine);
+      setOcrWords(result.words ?? []);
+      if (!result.text.trim()) {
+        showToast("error", "OCR tamamlandı ancak metin bulunamadı.");
+      } else {
+        showToast("success", "OCR tamamlandı.");
+      }
+
+      // Auto-copy if enabled
+      if (autoCopy && result.text.trim()) {
+          navigator.clipboard.writeText(result.text.trim()).catch(() => {});
+      }
+
+      const newItem: HistoryItem = {
+        id: Date.now().toString(),
+        imageBase64: dataUrl,
+        text: result.text,
+        date: new Date().toISOString(),
+      };
+      const newHistory = [newItem, ...history].slice(0, 50);
+      setHistory(newHistory);
+      try {
+        const store = await Store.load("settings.json");
+        await store.set("history", newHistory);
+        await store.save();
+      } catch {}
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLastError(message);
+      showToast("error", `OCR hatası: ${message}`);
+    } finally {
+      setOcrBusy(false);
+      setCaptureBusy(false);
+      setCapturePhase('idle');
+    }
+  };
+
   return (
-    <main className={`app-shell ${isSnippingMode ? 'snipping-active' : ''}`}>
+    <main className={`app-shell ${isSnippingMode ? 'snipping-active' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {!isSnippingMode && (
           <HeaderBar
             isCaptureBusy={captureBusy}
@@ -402,6 +630,7 @@ function App() {
             onSettingsClick={() => setIsSettingsOpen(true)}
             onHistoryClick={() => setIsHistoryOpen(true)}
             onClear={handleClearWorkspace}
+            onClipboardOcr={handleClipboardOcr}
             canExtract={Boolean(captureImage)}
             monitors={monitors}
             selectedMonitor={selectedMonitor}
@@ -448,10 +677,13 @@ function App() {
                  naturalSize={captureSize}
                  selection={selection}
                  onSelectionChange={setSelection}
-                 loading={captureBusy && !captureImage} // Image geldiyse loading degildir
+                 loading={captureBusy && !captureImage}
                  isSnippingMode={isSnippingMode}
                  onSelectionComplete={handleSelectionComplete}
                  currentShortcut={currentShortcut}
+                 onFileOcr={handleImageOcr}
+                 filters={filters}
+                 onFiltersChange={setFilters}
                />
            </div>
         </article>
@@ -462,7 +694,12 @@ function App() {
                 loading={ocrBusy} 
                 onCopy={handleCopy} 
                 engine={ocrEngine} 
-                error={lastError} 
+                error={lastError}
+                words={ocrWords}
+                captureImage={captureImage}
+                selection={selection}
+                isCollapsed={isSidebarCollapsed}
+                onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             />
         )}
       </section>
@@ -477,6 +714,34 @@ function App() {
         appVersion="0.2.1"
         currentShortcut={currentShortcut}
         onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
+        ocrLanguages={ocrLanguages}
+        onOcrLanguagesUpdate={async (langs) => {
+          setOcrLanguages(langs);
+          try {
+            const store = await Store.load("settings.json");
+            await store.set("ocr-languages", langs);
+            await store.save();
+          } catch {}
+        }}
+        autoCopy={autoCopy}
+        onAutoCopyUpdate={async (val) => {
+            setAutoCopy(val);
+            try {
+                const store = await Store.load("settings.json");
+                await store.set("auto-copy", val);
+                await store.save();
+            } catch {}
+        }}
+        alwaysOnTop={alwaysOnTop}
+        onAlwaysOnTopUpdate={async (val: boolean) => {
+            setAlwaysOnTop(val);
+            try {
+                getCurrentWindow().setAlwaysOnTop(val).catch(() => {});
+                const store = await Store.load("settings.json");
+                await store.set("always-on-top", val);
+                await store.save();
+            } catch {}
+        }}
       />
 
       <HistoryModal

@@ -1,4 +1,4 @@
-import type { Rect } from "../types";
+import type { Rect, ImageFilters } from "../types";
 
 const loadImage = (src: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -8,7 +8,11 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     image.src = src;
   });
 
-export const cropImageToBase64 = async (imageSrc: string, rect: Rect): Promise<string> => {
+export const cropImageToBase64 = async (
+  imageSrc: string, 
+  rect: Rect, 
+  filters?: ImageFilters
+): Promise<string> => {
   const image = await loadImage(imageSrc);
 
   // Kaynak (source) boyutlari
@@ -51,14 +55,28 @@ export const cropImageToBase64 = async (imageSrc: string, rect: Rect): Promise<s
     dHeight,
   );
 
-  // Gri tonlamaya cevir (Grayscale) - Basit bir yontem
+  // Gri tonlamaya cevir (Grayscale) + Filters
   const imageData = ctx.getImageData(0, 0, dWidth, dHeight);
   const data = imageData.data;
+  
+  const contrast = filters?.contrast ?? 1.0;
+  const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+  
   for (let i = 0; i < data.length; i += 4) {
-    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-    data[i] = avg; // R
-    data[i + 1] = avg; // G
-    data[i + 2] = avg; // B
+    // 1. Grayscale
+    let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    
+    // 2. Invert if needed
+    if (filters?.invert) {
+        avg = 255 - avg;
+    }
+    
+    // 3. Contrast if needed
+    if (contrast !== 1.0) {
+        avg = factor * (avg - 128) + 128;
+    }
+    
+    data[i] = data[i + 1] = data[i + 2] = avg;
   }
   ctx.putImageData(imageData, 0, 0);
 

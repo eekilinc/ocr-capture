@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 
 type Tab = "general" | "shortcut" | "about";
 
@@ -12,6 +13,12 @@ interface SettingsModalProps {
   appVersion: string;
   currentShortcut: string;
   onShortcutUpdate?: (newShortcut: string) => void;
+  ocrLanguages: string;
+  onOcrLanguagesUpdate: (langs: string) => void;
+  autoCopy: boolean;
+  onAutoCopyUpdate: (val: boolean) => void;
+  alwaysOnTop: boolean;
+  onAlwaysOnTopUpdate: (val: boolean) => void;
 }
 
 // Convert Tauri shortcut string -> display segments, e.g. "Control+Shift+F9" -> ["Ctrl","Shift","F9"]
@@ -32,11 +39,21 @@ export const SettingsModal = ({
   appVersion,
   currentShortcut,
   onShortcutUpdate,
+  ocrLanguages,
+  onOcrLanguagesUpdate,
+  autoCopy,
+  onAutoCopyUpdate,
+  alwaysOnTop,
+  onAlwaysOnTopUpdate,
 }: SettingsModalProps) => {
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
+
+  // Language selection state
+  const [availableLangs, setAvailableLangs] = useState<string[]>([]);
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(() => ocrLanguages.split("+").filter(Boolean));
 
   // Shortcut recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -60,7 +77,16 @@ export const SettingsModal = ({
         console.error("Store load failed:", e);
       }
     };
+    const loadLangs = async () => {
+      try {
+        const langs = await invoke<string[]>("list_ocr_languages");
+        setAvailableLangs(langs);
+      } catch {
+        // Tesseract may not be installed yet — silently ignore
+      }
+    };
     loadStore();
+    loadLangs();
   }, [isOpen]);
 
   // Reset recording state when tab changes or modal closes
@@ -143,6 +169,21 @@ export const SettingsModal = ({
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [isRecording, store, onShortcutUpdate]);
+
+  // Sync selectedLangs when parent ocrLanguages prop changes
+  useEffect(() => {
+    setSelectedLangs(ocrLanguages.split("+").filter(Boolean));
+  }, [ocrLanguages]);
+
+  const toggleLang = (lang: string) => {
+    const next = selectedLangs.includes(lang)
+      ? selectedLangs.filter((l) => l !== lang)
+      : [...selectedLangs, lang];
+    // Always keep at least one language selected
+    if (next.length === 0) return;
+    setSelectedLangs(next);
+    onOcrLanguagesUpdate(next.join("+"));
+  };
 
   const startRecording = () => {
     setRecordedKeys([]);
@@ -322,7 +363,7 @@ export const SettingsModal = ({
                 </div>
 
                 {/* Minimize to tray */}
-                <div className="setting-item" style={{ borderBottom: "none" }}>
+                <div className="setting-item">
                   <div className="setting-label">
                     <div className="setting-label-icon">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -343,6 +384,89 @@ export const SettingsModal = ({
                     />
                     <span className="slider round"></span>
                   </label>
+                </div>
+
+                {/* Auto Copy */}
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <span>Otomatik Kopyala</span>
+                      <small>OCR sonrası metni panoya otomatik kopyala</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={autoCopy}
+                      onChange={(e) => onAutoCopyUpdate(e.target.checked)}
+                    />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                {/* Always On Top */}
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                      </svg>
+                    </div>
+                    <div>
+                      <span>Her Zaman Üstte</span>
+                      <small>Pencereyi diğer uygulamaların üzerinde tut</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={alwaysOnTop}
+                      onChange={(e) => onAlwaysOnTopUpdate(e.target.checked)}
+                    />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                {/* OCR Languages */}
+                <div className="setting-item" style={{ borderBottom: "none", flexDirection: "column", alignItems: "flex-start", gap: "0.75rem" }}>
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>OCR Dilleri</span>
+                      <small>Tesseract'ın kullanacağı dilleri seçin</small>
+                    </div>
+                  </div>
+                  <div className="lang-chips">
+                    {availableLangs.length === 0 ? (
+                      <span style={{ fontSize: "0.78rem", color: "var(--text-tertiary)" }}>Tesseract kurulu değil veya dil paketi bulunamadı.</span>
+                    ) : (
+                      availableLangs.map((lang) => (
+                        <button
+                          key={lang}
+                          className={`lang-chip ${selectedLangs.includes(lang) ? "active" : ""}`}
+                          onClick={() => toggleLang(lang)}
+                          title={lang}
+                        >
+                          {lang}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  {selectedLangs.length > 0 && (
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                      Aktif: <code style={{ fontFamily: "var(--font-mono)" }}>{selectedLangs.join("+")}</code>
+                    </span>
+                  )}
                 </div>
               </div>
             )}
