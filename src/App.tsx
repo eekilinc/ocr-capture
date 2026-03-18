@@ -556,16 +556,10 @@ function App() {
       const ctx = canvas.getContext("2d")!;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
+      ctx.filter = "grayscale(100%)";
       ctx.fillStyle = "#FFFFFF";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imageData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-        d[i] = d[i + 1] = d[i + 2] = avg;
-      }
-      ctx.putImageData(imageData, 0, 0);
       const processedBase64 = canvas.toDataURL("image/png");
       
       // Attempt QR Scan
