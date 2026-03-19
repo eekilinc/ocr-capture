@@ -50,6 +50,7 @@ export const SettingsModal = ({
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
+  const langsCachedRef = useRef<boolean>(false);
 
   // Language selection state
   const [availableLangs, setAvailableLangs] = useState<string[]>([]);
@@ -78,9 +79,11 @@ export const SettingsModal = ({
       }
     };
     const loadLangs = async () => {
+      if (langsCachedRef.current && availableLangs.length > 0) return;
       try {
         const langs = await invoke<string[]>("list_ocr_languages");
         setAvailableLangs(langs);
+        langsCachedRef.current = true;
       } catch {
         // Tesseract may not be installed yet — silently ignore
       }

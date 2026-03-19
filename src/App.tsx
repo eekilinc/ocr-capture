@@ -47,12 +47,14 @@ function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [filters, setFilters] = useState<ImageFilters>({ invert: false, contrast: 1.0 });
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const storeRef = useRef<Store | null>(null);
 
   // Initialize App Settings (Defaults)
   useEffect(() => {
     const initSettings = async () => {
         try {
             const store = await Store.load("settings.json");
+            storeRef.current = store;
             const setupDone = await store.get<boolean>("setup-done");
 
             if (!setupDone) {
@@ -136,7 +138,8 @@ function App() {
     const initCloseHandler = async () => {
         const appWindow = getCurrentWindow();
         try {
-            const store = await Store.load("settings.json");
+            const store = storeRef.current || await Store.load("settings.json");
+            if (!storeRef.current) storeRef.current = store;
             
             await appWindow.onCloseRequested(async (event) => {
                 try {
@@ -415,11 +418,12 @@ function App() {
       setHistory(newHistory);
       
       try {
-          const store = await Store.load("settings.json");
+          const store = storeRef.current || await Store.load("settings.json");
+          if (!storeRef.current) storeRef.current = store;
           await store.set("history", newHistory);
           await store.save();
       } catch (e) {
-          console.error("Failed to save history:", e);
+          console.error("History save failed:", e);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -467,7 +471,8 @@ function App() {
       const newHistory = history.filter(item => item.id !== id);
       setHistory(newHistory);
       try {
-          const store = await Store.load("settings.json");
+          const store = storeRef.current || await Store.load("settings.json");
+          if (!storeRef.current) storeRef.current = store;
           await store.set("history", newHistory);
           await store.save();
       } catch (e) {
@@ -478,7 +483,8 @@ function App() {
   const handleHistoryClear = async () => {
       setHistory([]);
       try {
-          const store = await Store.load("settings.json");
+          const store = storeRef.current || await Store.load("settings.json");
+          if (!storeRef.current) storeRef.current = store;
           await store.set("history", []);
           await store.save();
       } catch (e) {
@@ -713,7 +719,8 @@ function App() {
         onOcrLanguagesUpdate={async (langs) => {
           setOcrLanguages(langs);
           try {
-            const store = await Store.load("settings.json");
+            const store = storeRef.current || await Store.load("settings.json");
+            if (!storeRef.current) storeRef.current = store;
             await store.set("ocr-languages", langs);
             await store.save();
           } catch {}
@@ -722,7 +729,8 @@ function App() {
         onAutoCopyUpdate={async (val) => {
             setAutoCopy(val);
             try {
-                const store = await Store.load("settings.json");
+                const store = storeRef.current || await Store.load("settings.json");
+                if (!storeRef.current) storeRef.current = store;
                 await store.set("auto-copy", val);
                 await store.save();
             } catch {}
@@ -732,7 +740,8 @@ function App() {
             setAlwaysOnTop(val);
             try {
                 getCurrentWindow().setAlwaysOnTop(val).catch(() => {});
-                const store = await Store.load("settings.json");
+                const store = storeRef.current || await Store.load("settings.json");
+                if (!storeRef.current) storeRef.current = store;
                 await store.set("always-on-top", val);
                 await store.save();
             } catch {}
