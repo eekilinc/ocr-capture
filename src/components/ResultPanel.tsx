@@ -103,7 +103,14 @@ export const ResultPanel = ({
 
   const renderContent = () => {
     if (loading) {
-      return <div className="shimmer" style={{ width: "100%", height: "100%", minHeight: "200px", borderRadius: "8px" }}></div>;
+      return (
+        <div className="shimmer-container" style={{ width: "100%", height: "100%", minHeight: "200px", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+          <div className="shimmer" style={{ width: "100%", height: "120px", borderRadius: "12px" }}></div>
+          <div className="shimmer" style={{ width: "80%", height: "20px", borderRadius: "10px" }}></div>
+          <div className="shimmer" style={{ width: "60%", height: "20px", borderRadius: "10px" }}></div>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontWeight: 500 }} className="pulse">Metin çözümleniyor...</p>
+        </div>
+      );
     }
     if (error) {
       return (
@@ -178,7 +185,7 @@ export const ResultPanel = ({
           <textarea className="result-textarea" value={text} readOnly spellCheck={false} style={{ flex: 1 }} />
         ) : (
           <div className="result-empty-state">
-            <div className="result-empty-icon">
+            <div className="capture-empty-icon pulse">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             </div>
             <p className="result-empty-title">{engine ? "Metin bulunamadı" : "Sonuç bekleniyor"}</p>

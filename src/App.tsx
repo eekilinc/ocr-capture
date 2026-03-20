@@ -675,10 +675,11 @@ function App() {
             onHistoryClick={() => setIsHistoryOpen(true)}
             onClear={handleClearWorkspace}
             onClipboardOcr={handleClipboardOcr}
-            canExtract={Boolean(captureImage)}
+            canExtract={captureImage !== null}
             monitors={monitors}
             selectedMonitor={selectedMonitor}
             onMonitorSelect={setSelectedMonitor}
+            appVersion="1.3.3"
           />
       )}
 
@@ -762,7 +763,7 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="1.3.2"
+        appVersion="1.3.3"
         currentShortcut={currentShortcut}
         onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
         ocrLanguages={ocrLanguages}

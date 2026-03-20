@@ -14,6 +14,7 @@ type HeaderBarProps = {
   monitors: MonitorInfo[];
   selectedMonitor: number | null;
   onMonitorSelect: (monitorId: number | null) => void;
+  appVersion: string;
 };
 
 export const HeaderBar = ({
@@ -29,11 +30,15 @@ export const HeaderBar = ({
   monitors,
   selectedMonitor,
   onMonitorSelect,
+  appVersion,
 }: HeaderBarProps) => {
   return (
     <header className="header-panel">
       <div className="brand">
-        <h1>Metin Yakalayıcı</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <h1>Metin Yakalayıcı</h1>
+            <span className="version-badge-sm">v{appVersion}</span>
+        </div>
         <p>Ekran görüntüsünden metin ayıkla</p>
       </div>
 
