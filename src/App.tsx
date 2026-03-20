@@ -44,6 +44,7 @@ export default function App() {
   const [autoCopy, setAutoCopy] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [lastCapturePath, setLastCapturePath] = useState<string | null>(null);
   const storeRef = useRef<Store | null>(null);
 
   // Initialize App Settings
@@ -118,6 +119,7 @@ export default function App() {
     setLastError("");
     try {
       const resp = await invoke<CaptureResponse>("capture_screen", { monitorId: selectedMonitor });
+      setLastCapturePath(resp.imagePath);
       setCaptureImage(convertFileSrc(resp.imagePath));
       setIsSnippingMode(true);
       setSelections([]);
@@ -132,33 +134,51 @@ export default function App() {
   }, [captureBusy, selectedMonitor, showToast]);
 
   const handleOcr = useCallback(async (rects: Rect[]) => {
-    if (!captureImage || rects.length === 0 || ocrBusy) return;
+    if (!captureImage || ocrBusy) return;
     setOcrBusy(true);
     setLastError("");
     try {
-      const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
-      const resp = await invoke<OcrResponse>("run_ocr", { 
-        input: {
-          imageBase64: croppedBase64.split(",")[1], 
-          languages: ocrLanguages 
-        }
-      });
+      const input: any = { languages: ocrLanguages };
+      
+      if (lastCapturePath) {
+        input.imagePath = lastCapturePath;
+      } else {
+        input.imageBase64 = captureImage.startsWith("data:") 
+          ? captureImage.split(",")[1] 
+          : captureImage; // Handle raw base64 if needed
+      }
+
+      if (rects.length > 0) {
+        input.crop = rects[0];
+      }
+
+      const resp = await invoke<OcrResponse>("run_ocr", { input });
       
       setOcrText(resp.text);
       setOcrEngine(resp.engine);
       setOcrWords(resp.words);
       
-      const qr = await scanQrCode(croppedBase64);
-      setQrResult(qr);
+      // Auto-scan QR for selections
+      if (rects.length > 0) {
+        const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
+        const qr = await scanQrCode(croppedBase64);
+        setQrResult(qr);
+      } else {
+        setQrResult(null);
+      }
 
       if (autoCopy && resp.text) {
         await invoke("copy_to_clipboard", { text: resp.text });
         showToast("success", "toastTextCopied");
       }
 
+      const historyImage = rects.length > 1 
+        ? captureImage 
+        : (rects.length === 1 ? await cropImageToBase64(captureImage, rects[0]) : captureImage);
+
       const newItem: HistoryItem = {
         id: crypto.randomUUID(),
-        imageBase64: await createThumbnail(croppedBase64),
+        imageBase64: await createThumbnail(historyImage),
         text: resp.text,
         date: new Date().toISOString(),
       };
@@ -174,14 +194,15 @@ export default function App() {
       showToast("error", "toastOcrError");
     } finally {
       setOcrBusy(false);
-      setIsSnippingMode(false);
+      // NOTE: We don't exit snipping mode anymore so user can select again
     }
-  }, [autoCopy, captureImage, history, ocrBusy, ocrLanguages, showToast]);
+  }, [autoCopy, captureImage, lastCapturePath, history, ocrBusy, ocrLanguages, showToast]);
 
   const handleClipboardOcr = useCallback(async () => {
     if (ocrBusy) return;
     setOcrBusy(true);
     setLastError("");
+    setLastCapturePath(null); // Clear path as it is from memory
     try {
       const imageBase64 = await invoke<string>("read_clipboard_image");
       if (!imageBase64) {
@@ -200,6 +221,7 @@ export default function App() {
       setOcrEngine(resp.engine);
       setOcrWords(resp.words);
       setCaptureImage(`data:image/png;base64,${imageBase64}`);
+      setIsSnippingMode(true);
       setSelections([]);
       setQrResult(null);
 
@@ -247,16 +269,30 @@ export default function App() {
     return () => { unregister(currentShortcut).catch(() => {}); };
   }, [currentShortcut, handleNewCapture]);
 
-  const handleImageSelect = useCallback((path: string) => {
+  const handleImageSelect = useCallback(async (path: string) => {
+    setLastCapturePath(path);
     setCaptureImage(convertFileSrc(path));
     setIsSnippingMode(true);
     setSelections([]);
     setOcrText("");
+    
+    // Explicitly call handleOcr since it's now wrapped in a ref-stable way
+    // But we need to be careful about closure over ocrLanguages etc.
+    // Actually, calling handleOcr([]) here is fine as it's defined after
   }, []);
+
+  // Effect to trigger auto-OCR when image is selected
+  useEffect(() => {
+    if (captureImage && isSnippingMode && selections.length === 0 && !ocrText && !ocrBusy) {
+        handleOcr([]);
+    }
+  }, [captureImage, isSnippingMode, selections.length, ocrText, ocrBusy, handleOcr]);
 
   const handleClear = useCallback(() => {
     setCaptureImage(null);
+    setLastCapturePath(null);
     setSelections([]);
+    setIsSnippingMode(false);
     setOcrText("");
     setOcrWords([]);
     setQrResult(null);
