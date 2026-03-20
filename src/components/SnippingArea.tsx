@@ -208,12 +208,7 @@ export const SnippingArea = ({
         )}
       </div>
 
-      {isSnippingMode && !startPos && !loading && (
-        <div className="snipping-hints">
-          <div className="hint-pill">{t("hintDragToSelect")}</div>
-          <div className="hint-pill secondary">{t("hintMultiSelect")}</div>
-        </div>
-      )}
+
     </div>
   );
 };
