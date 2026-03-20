@@ -56,6 +56,13 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+            _ => {}
+        })
         .invoke_handler(tauri::generate_handler![
             commands::capture::capture_screen,
             commands::capture::get_monitors,
