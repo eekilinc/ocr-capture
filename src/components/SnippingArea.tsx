@@ -23,6 +23,7 @@ export const SnippingArea = ({
   const [localSelections, setLocalSelections] = useState<Rect[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const getPos = (e: React.MouseEvent | MouseEvent) => {
     if (!containerRef.current) return { x: 0, y: 0 };
@@ -58,7 +59,23 @@ export const SnippingArea = ({
     if (newRect.width > 5 && newRect.height > 5) {
       const updated = e.shiftKey ? [...localSelections, newRect] : [newRect];
       setLocalSelections(updated);
-      onSelectionComplete(updated);
+      
+      // Calculate Natural Rects for Backend/OCR
+      if (imgRef.current) {
+          const img = imgRef.current;
+          const scaleX = img.naturalWidth / img.clientWidth;
+          const scaleY = img.naturalHeight / img.clientHeight;
+          
+          const naturalUpdated = updated.map(r => ({
+              x: r.x * scaleX,
+              y: r.y * scaleY,
+              width: r.width * scaleX,
+              height: r.height * scaleY
+          }));
+          onSelectionComplete(naturalUpdated);
+      } else {
+          onSelectionComplete(updated);
+      }
     }
 
     setStartPos(null);
@@ -169,7 +186,7 @@ export const SnippingArea = ({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      <img className="capture-image" src={imageSrc || ""} alt="capture" draggable={false} />
+      <img ref={imgRef} className="capture-image" src={imageSrc || ""} alt="capture" draggable={false} />
       
       {loading && (
         <div className="capture-loading-overlay">
