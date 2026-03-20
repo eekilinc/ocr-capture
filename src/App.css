@@ -569,6 +569,11 @@ button {
 .sidebar-collapsed .panel:last-child {
   width: 48px;
   cursor: pointer;
+  transition: background-color 0.2s ease, width 0.3s ease;
+}
+
+.sidebar-collapsed .panel:last-child:hover {
+  background-color: var(--panel-bg-lighter, rgba(255, 255, 255, 0.05));
 }
 
 .sidebar-collapsed .panel:last-child .panel-header {

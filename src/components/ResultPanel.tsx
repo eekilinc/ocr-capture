@@ -190,7 +190,12 @@ export const ResultPanel = ({
   };
 
   return (
-    <article className="panel">
+    <article 
+      className={`panel ${isCollapsed ? 'collapsed-clickable' : ''}`}
+      onClick={() => {
+        if (isCollapsed) onToggleCollapse();
+      }}
+    >
       <div className="panel-header">
         <h2 className="panel-title">{isCollapsed ? "" : "OCR Sonucu"}</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>

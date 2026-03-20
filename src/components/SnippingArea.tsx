@@ -436,6 +436,9 @@ export const SnippingArea = ({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <img src={imageSrc} alt="Capture" className="capture-image" draggable={false} crossOrigin="anonymous" />
       <div className="selection-overlay">{renderSelections()}</div>
