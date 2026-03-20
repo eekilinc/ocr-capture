@@ -121,7 +121,8 @@ export default function App() {
     try {
       const resp = await invoke<CaptureResponse>("capture_screen", { monitorId: selectedMonitor });
       setLastCapturePath(resp.imagePath);
-      setCaptureImage(convertFileSrc(resp.imagePath));
+      // Append timestamp to bypass browser cache for identical paths (ocr_capture.png)
+      setCaptureImage(convertFileSrc(resp.imagePath) + `?t=${Date.now()}`);
       setIsSnippingMode(true);
       setSelections([]);
       setOcrText("");
