@@ -127,6 +127,12 @@ export default function App() {
     setLastError("");
     try {
       const resp = await invoke<CaptureResponse>("capture_screen", { monitorId: selectedMonitor });
+      
+      const appWindow = getCurrentWindow();
+      await appWindow.show();
+      await appWindow.unminimize();
+      await appWindow.setFocus();
+
       setLastCapturePath(resp.imagePath);
       // Append timestamp to bypass browser cache for identical paths (ocr_capture.png)
       setCaptureImage(convertFileSrc(resp.imagePath) + `?t=${Date.now()}`);
