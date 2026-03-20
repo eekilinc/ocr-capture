@@ -59,23 +59,7 @@ export const SnippingArea = ({
     if (newRect.width > 5 && newRect.height > 5) {
       const updated = e.shiftKey ? [...localSelections, newRect] : [newRect];
       setLocalSelections(updated);
-      
-      // Calculate Natural Rects for Backend/OCR
-      if (imgRef.current) {
-          const img = imgRef.current;
-          const scaleX = img.naturalWidth / img.clientWidth;
-          const scaleY = img.naturalHeight / img.clientHeight;
-          
-          const naturalUpdated = updated.map(r => ({
-              x: r.x * scaleX,
-              y: r.y * scaleY,
-              width: r.width * scaleX,
-              height: r.height * scaleY
-          }));
-          onSelectionComplete(naturalUpdated);
-      } else {
-          onSelectionComplete(updated);
-      }
+      onSelectionComplete(updated);
     }
 
     setStartPos(null);
