@@ -138,8 +138,10 @@ export default function App() {
     try {
       const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
       const resp = await invoke<OcrResponse>("run_ocr", { 
-        imageBase64: croppedBase64.split(",")[1], 
-        languages: ocrLanguages 
+        input: {
+          imageBase64: croppedBase64.split(",")[1], 
+          languages: ocrLanguages 
+        }
       });
       
       setOcrText(resp.text);
@@ -188,8 +190,10 @@ export default function App() {
       }
 
       const resp = await invoke<OcrResponse>("run_ocr", { 
-        imageBase64, 
-        languages: ocrLanguages 
+        input: {
+          imageBase64, 
+          languages: ocrLanguages 
+        }
       });
 
       setOcrText(resp.text);
