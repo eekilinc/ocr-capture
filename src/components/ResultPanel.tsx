@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import type { OcrWord, Rect } from "../types";
 import { useTranslation } from "../hooks/useTranslation";
 
@@ -37,7 +37,7 @@ function formatText(text: string, format: CopyFormat): string {
   }
 }
 
-export const ResultPanel = ({
+export const ResultPanel = memo(({
   text,
   loading,
   onCopy,
@@ -263,4 +263,4 @@ export const ResultPanel = ({
       </div>
     </article>
   );
-};
+});

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, memo } from "react";
 import { useTranslation } from "../hooks/useTranslation";
 import type { Rect } from "../types";
 
@@ -15,7 +15,7 @@ interface SnippingAreaProps {
   loading: boolean;
 }
 
-export const SnippingArea = ({
+export const SnippingArea = memo(({
   imageSrc,
   onSelectionComplete,
   onImageSelect,
@@ -317,4 +317,4 @@ export const SnippingArea = ({
       )}
     </div>
   );
-};
+});
