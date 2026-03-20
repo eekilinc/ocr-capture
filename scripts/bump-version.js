@@ -17,12 +17,7 @@ pkg.version = newVersion;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 console.log(`Updated package.json to ${newVersion}`);
 
-// 1b. App.tsx (hardcoded version)
-const appPath = path.join(root, 'src', 'App.tsx');
-let app = fs.readFileSync(appPath, 'utf8');
-app = app.replace(/appVersion=".*"/, `appVersion="${newVersion}"`);
-fs.writeFileSync(appPath, app);
-console.log(`Updated App.tsx to ${newVersion}`);
+// (App.tsx updates removed since version is now fetched dynamically from Tauri API)
 
 // 2. tauri.conf.json
 const tauriConfPath = path.join(root, 'src-tauri', 'tauri.conf.json');

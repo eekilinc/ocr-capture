@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { register, unregister, isRegistered } from "@tauri-apps/plugin-global-shortcut";
 import { Store } from "@tauri-apps/plugin-store";
@@ -46,6 +47,7 @@ export default function App() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [lastCapturePath, setLastCapturePath] = useState<string | null>(null);
   const [imgDisplaySize, setImgDisplaySize] = useState<{ w: number; h: number } | null>(null);
+  const [appVersion, setAppVersion] = useState("");
   const storeRef = useRef<Store | null>(null);
 
   // Initialize App Settings
@@ -54,6 +56,11 @@ export default function App() {
         try {
             const store = await Store.load("settings.json");
             storeRef.current = store;
+            
+            try {
+                const ver = await getVersion();
+                setAppVersion(ver);
+            } catch {}
             const setupDone = await store.get<boolean>("setup-done");
 
             // Load Monitors
@@ -362,7 +369,7 @@ export default function App() {
         monitors={monitors}
         selectedMonitor={selectedMonitor}
         onMonitorSelect={setSelectedMonitor}
-        appVersion="2.0.1"
+        appVersion={appVersion}
       />
 
       <main className="workspace-grid">
@@ -406,7 +413,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="1.3.5"
+        appVersion={appVersion}
         currentShortcut={currentShortcut}
         onShortcutUpdate={handleShortcutUpdate}
         ocrLanguages={ocrLanguages.split("+")}
