@@ -1,6 +1,6 @@
 [package]
 name = "ocr-capture"
-version = "1.2.3"
+version = "1.3.5"
 description = "Ekran görüntülerinden hızlı ve çevrimdışı metin ayıklama aracı"
 authors = ["Ekrem Kılınç"]
 edition = "2021"
@@ -28,6 +28,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 screenshots = "0.8"
 which = "8"
 tauri-plugin-store = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 

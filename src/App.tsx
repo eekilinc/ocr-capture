@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { register, unregister, isRegistered } from "@tauri-apps/plugin-global-shortcut";
 import { Store } from "@tauri-apps/plugin-store";
-import { CaptureCanvas } from "./components/CaptureCanvas";
 import { HeaderBar } from "./components/HeaderBar";
+import { SnippingArea } from "./components/SnippingArea";
 import { ResultPanel } from "./components/ResultPanel";
 import { StatusToast } from "./components/StatusToast";
 import { SettingsModal } from "./components/SettingsModal";
@@ -14,21 +14,19 @@ import { HistoryModal } from "./components/HistoryModal";
 import { cropImageToBase64, createThumbnail } from "./lib/image";
 import { scanQrCode } from "./lib/qr";
 import { useTheme } from "./hooks/useTheme";
-import type { CaptureResponse, OcrResponse, OcrWord, Rect, ToastState, MonitorInfo, HistoryItem, ImageFilters } from "./types";
+import { useTranslation } from "./hooks/useTranslation";
+import type { CaptureResponse, OcrResponse, OcrWord, Rect, ToastState, MonitorInfo, HistoryItem } from "./types";
 
-const DEFAULT_TOAST: ToastState = { kind: "hidden", message: "" };
-
-function App() {
+export default function App() {
   const [theme, setTheme] = useTheme();
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState<number | null>(null);
   
   const [currentShortcut, setCurrentShortcut] = useState("Control+Shift+F9");
   const [ocrLanguages, setOcrLanguages] = useState("tur+eng");
+  const { lang: appLang } = useTranslation();
 
   const [captureImage, setCaptureImage] = useState<string | null>(null);
-  const [captureImagePath, setCaptureImagePath] = useState<string | null>(null);
-  const [captureSize, setCaptureSize] = useState({ width: 0, height: 0 });
   const [selections, setSelections] = useState<Rect[]>([]);
   const [ocrText, setOcrText] = useState("");
   const [ocrEngine, setOcrEngine] = useState("");
@@ -37,20 +35,18 @@ function App() {
   const [lastError, setLastError] = useState("");
   const [captureBusy, setCaptureBusy] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [toast, setToast] = useState<ToastState>(DEFAULT_TOAST);
+  const [toast, setToast] = useState<ToastState>({ kind: "hidden", message: "" });
   
   const [isSnippingMode, setIsSnippingMode] = useState(false);
-  const [capturePhase, setCapturePhase] = useState<'idle' | 'capturing' | 'selecting' | 'ocr'>('idle');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [autoCopy, setAutoCopy] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [filters, setFilters] = useState<ImageFilters>({ invert: false, contrast: 1.0 });
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const storeRef = useRef<Store | null>(null);
 
-  // Initialize App Settings (Defaults)
+  // Initialize App Settings
   useEffect(() => {
     const initSettings = async () => {
         try {
@@ -58,59 +54,39 @@ function App() {
             storeRef.current = store;
             const setupDone = await store.get<boolean>("setup-done");
 
+            // Load Monitors
+            try {
+               const mons = await invoke<MonitorInfo[]>("get_monitors");
+               setMonitors(mons);
+            } catch {}
+
             if (!setupDone) {
-                // First Run: Enable defaults
-                console.log("First run setup: Enabling autostart and tray minimize");
-                
-                // 1. Enable Autostart
                 try {
                     const auto = await isEnabled();
-                    if (!auto) {
-                        await enable();
-                    }
-                } catch (e) {
-                    console.error("Autostart enable failed:", e);
-                }
-
-                // 2. Set Minimize to Tray
+                    if (!auto) await enable();
+                } catch {}
                 await store.set("minimize-to-tray", true);
-                
-                // 3. Mark setup as done
                 await store.set("setup-done", true);
                 await store.save();
             } else {
-                // Not first run, load saved shortcut
                 const savedShortcut = await store.get<string>("global-shortcut");
-                if (savedShortcut) {
-                    setCurrentShortcut(savedShortcut);
-                }
+                if (savedShortcut) setCurrentShortcut(savedShortcut);
 
-                // Load OCR languages
                 const savedLangs = await store.get<string>("ocr-languages");
-                if (savedLangs) {
-                    setOcrLanguages(savedLangs);
-                }
+                if (savedLangs) setOcrLanguages(savedLangs);
                 
-                // Load History
                 const savedHistory = await store.get<HistoryItem[]>("history");
-                if (savedHistory) {
-                    setHistory(savedHistory);
-                }
+                if (savedHistory) setHistory(savedHistory);
 
-                // Load Auto-Copy
                 const savedAutoCopy = await store.get<boolean>("auto-copy");
-                if (savedAutoCopy !== undefined) {
-                    setAutoCopy(savedAutoCopy);
-                }
+                if (savedAutoCopy !== undefined) setAutoCopy(savedAutoCopy);
 
-                // Load Always-On-Top
                 const savedAlwaysOnTop = await store.get<boolean>("always-on-top");
                 if (savedAlwaysOnTop !== undefined) {
                     setAlwaysOnTop(savedAlwaysOnTop);
                     getCurrentWindow().setAlwaysOnTop(savedAlwaysOnTop).catch(() => {});
                 }
 
-                // Pencere boyutu ve konumunu geri yükle
                 try {
                     const savedW = await store.get<number>("window-width");
                     const savedH = await store.get<number>("window-height");
@@ -123,695 +99,302 @@ function App() {
                     if (savedX !== null && savedY !== null && savedX !== undefined && savedY !== undefined) {
                         await appWindow.setPosition(new PhysicalPosition(savedX, savedY));
                     }
-                } catch (e) {
-                    console.error("Pencere konumu geri yüklenemedi:", e);
-                }
+                } catch {}
             }
-        } catch (e) {
-            console.error("Setup init failed:", e);
-        }
+        } catch {}
     };
     initSettings();
   }, []);
 
-  // Handle window close request (Minimize to Tray)
-  useEffect(() => {
-    const initCloseHandler = async () => {
-        const appWindow = getCurrentWindow();
-        try {
-            const store = storeRef.current || await Store.load("settings.json");
-            if (!storeRef.current) storeRef.current = store;
-            
-            await appWindow.onCloseRequested(async (event) => {
-                try {
-                    // Default to TRUE if setting is missing
-                    const val = await store.get<boolean>("minimize-to-tray");
-                    const minimizeToTray = val ?? true; 
-                    
-                    if (minimizeToTray) {
-                        event.preventDefault();
-                        await appWindow.hide();
-                    }
-                } catch (err) {
-                    console.error("Error checking minimize-to-tray setting:", err);
-                }
-            });
-        } catch (err) {
-            console.error("Failed to load store for close handler:", err);
-        }
-    };
-    
-    initCloseHandler();
-  }, []);
-
-  // Pencere boyutu ve konumunu kaydet (debounced)
-  useEffect(() => {
-    const appWindow = getCurrentWindow();
-    let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const saveWindowState = async () => {
-      try {
-        const [size, pos] = await Promise.all([
-          appWindow.outerSize(),
-          appWindow.outerPosition(),
-        ]);
-        const store = await Store.load("settings.json");
-        await store.set("window-width", size.width);
-        await store.set("window-height", size.height);
-        await store.set("window-x", pos.x);
-        await store.set("window-y", pos.y);
-        await store.save();
-      } catch {}
-    };
-
-    const schedule = () => {
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveWindowState, 600);
-    };
-
-    const unlistenResize = appWindow.onResized(schedule);
-    const unlistenMove = appWindow.onMoved(schedule);
-
-    return () => {
-      if (saveTimer) clearTimeout(saveTimer);
-      unlistenResize.then((fn) => fn());
-      unlistenMove.then((fn) => fn());
-    };
-  }, []);
-
-  useEffect(() => {
-    invoke<MonitorInfo[]>("get_monitors")
-      .then(setMonitors)
-      .catch((err) => console.error("Monitorler yuklenemedi:", err));
-  }, []);
-
-  const showToast = (kind: ToastState["kind"], message: string) => {
+  const showToast = useCallback((kind: "success" | "error" | "info", message: string, duration = 3000) => {
     setToast({ kind, message });
-    window.setTimeout(() => setToast(DEFAULT_TOAST), 2600);
-  };
+    setTimeout(() => setToast({ kind: "hidden", message: "" }), duration);
+  }, []);
 
-  const captureBusyRef = useRef(captureBusy);
-  const selectedMonitorRef = useRef(selectedMonitor);
-
-  useEffect(() => {
-      captureBusyRef.current = captureBusy;
-  }, [captureBusy]);
-
-  useEffect(() => {
-      selectedMonitorRef.current = selectedMonitor;
-  }, [selectedMonitor]);
-
-  const handleNewCaptureRef = useRef<() => Promise<void>>(async () => {});
-  const previousShortcutRef = useRef<string>("");
-
-  // Handle Global Shortcut — unregister old, register new on every change.
-  // NOTE: useEffect cleanup runs AFTER the new effect fires, so we cannot rely
-  // on it to unregister the previous shortcut. We track the previous value in a
-  // ref and handle the full transition (unregister-old → unregister-new-if-stale
-  // → register-new) in a single async sequence inside the effect itself.
-  useEffect(() => {
-    if (!currentShortcut) return;
-
-    const previousShortcut = previousShortcutRef.current;
-    previousShortcutRef.current = currentShortcut;
-
-    let cancelled = false;
-
-    const setupShortcut = async () => {
-      // 1. Unregister the previous shortcut if different (shortcut changed)
-      if (previousShortcut && previousShortcut !== currentShortcut) {
-        try {
-          await unregister(previousShortcut);
-        } catch {
-          // ignore — may not have been registered yet
-        }
-      }
-
-      // 2. Unregister the current shortcut if already registered (hot-reload / StrictMode guard)
-      try {
-        if (await isRegistered(currentShortcut)) {
-          await unregister(currentShortcut);
-        }
-      } catch {
-        // ignore
-      }
-
-      if (cancelled) return;
-
-      // 3. Register the new shortcut
-      try {
-        await register(currentShortcut, async (event) => {
-          if (event.state === "Pressed" && !captureBusyRef.current) {
-            handleNewCaptureRef.current();
-          }
-        });
-      } catch (err) {
-        if (cancelled) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        showToast("error", `Kısayol kaydedilemedi: ${msg}`);
-      }
-    };
-
-    setupShortcut();
-
-    return () => {
-      cancelled = true;
-      unregister(currentShortcut).catch(() => {});
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentShortcut]);
-
-  const handleNewCapture = async () => {
+  const handleNewCapture = useCallback(async () => {
     if (captureBusy) return;
     setCaptureBusy(true);
-    setCapturePhase('capturing');
-    
-    // 1. Önce DOM'u şeffaf yap (görsel flash azaltma)
-    document.body.style.opacity = '0';
-    document.body.style.transition = 'opacity 0.1s ease';
-
-    // 2. Pencereyi gizle
-    const appWindow = getCurrentWindow();
-    try {
-        await appWindow.hide();
-    } catch (err) {
-        console.error("Pencere gizlenemedi:", err);
-    }
-
-    // 3. Kisa bir sure bekle (pencere animasyonu bitsin)
-    setTimeout(async () => {
-      try {
-        // 4. Ekrani yakala
-        const payload = await invoke<CaptureResponse>("capture_screen", {
-          monitorId: selectedMonitor,
-        });
-        
-        setCaptureImagePath(payload.imagePath);
-        setCaptureImage(convertFileSrc(payload.imagePath));
-        setCaptureSize({ width: payload.width, height: payload.height });
-        setSelections([]);
-        setOcrText("");
-        setOcrEngine("");
-        setOcrWords([]);
-        setLastError("");
-
-        // 5. Snipping modunu ac ve pencereyi tam ekran goster
-        setIsSnippingMode(true);
-        setCapturePhase('selecting');
-        await appWindow.setFullscreen(true);
-        
-        // Eger spesifik bir monitor secildiyse pencereyi oraya tasi
-        if (selectedMonitor !== null) {
-             const monitor = monitors.find(m => m.id === selectedMonitor);
-             if (monitor) {
-                 await appWindow.setFullscreen(false);
-                 await appWindow.setPosition(new PhysicalPosition(monitor.x, monitor.y));
-                 await appWindow.setFullscreen(true);
-             }
-        }
-
-        await appWindow.show();
-        await appWindow.setFocus();
-
-        // DOM'u geri görünür yap
-        requestAnimationFrame(() => {
-          document.body.style.opacity = '1';
-        });
-
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        showToast("error", `Yakalama başarısız: ${message}`);
-        setCaptureBusy(false);
-        setCapturePhase('idle');
-        await appWindow.show();
-        document.body.style.opacity = '1';
-      }
-    }, 250); // 250ms — opacity trick sayesinde daha kısa
-  };
-
-  useEffect(() => {
-      handleNewCaptureRef.current = handleNewCapture;
-  }, [handleNewCapture]);
-
-  const handleSelectionComplete = async (rect: Rect) => {
-    // Secim tamamlandiginda otomatik olarak kirpma ve OCR baslat
-    setIsSnippingMode(false);
-    setCapturePhase('ocr');
-    const appWindow = getCurrentWindow();
-    await appWindow.setFullscreen(false);
-    
-    // Kucuk bir bekleme, UI duzelsin
-    setTimeout(() => {
-        setSelections([rect]);
-        handleExtractText(rect);
-    }, 100);
-  };
-
-  const handleBatchOcr = async (rects: Rect[]) => {
-    if ((!captureImage && !captureImagePath) || rects.length === 0) return;
-    setOcrBusy(true);
-    setCapturePhase('ocr');
-    let fullText = "";
-    
-    try {
-        for (const rect of rects) {
-            const croppedDataUrl = await cropImageToBase64(captureImage!, rect, filters);
-            const result = await invoke<OcrResponse>("run_ocr", {
-                input: {
-                    imagePath: captureImagePath,
-                    imageBase64: captureImagePath ? undefined : croppedDataUrl.split(",")[1],
-                    enhance: true,
-                    languages: ocrLanguages,
-                    crop: captureImagePath ? rect : undefined,
-                },
-            });
-            if (result.text.trim()) {
-                fullText += result.text.trim() + "\n\n";
-            }
-        }
-        
-        setOcrText(fullText.trim());
-        setOcrEngine("Tesseract (Batch)");
-        setOcrWords([]);
-        setLastError("");
-        
-        if (!fullText.trim()) {
-            showToast("error", "Seçilen alanlarda metin bulunamadı.");
-        } else {
-            showToast("success", `${rects.length} alan başarıyla okundu.`);
-            if (autoCopy) {
-                navigator.clipboard.writeText(fullText.trim()).catch(() => {});
-            }
-        }
-    } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        setLastError(msg);
-        showToast("error", `Batch OCR hatası: ${msg}`);
-    } finally {
-        setOcrBusy(false);
-        setCaptureBusy(false);
-        setCapturePhase('idle');
-    }
-  };
-
-  const handleExtractText = async (overrideSelection?: Rect) => {
-    const target = overrideSelection ?? selections[0];
-
-    if ((!captureImage && !captureImagePath) || !target) {
-      if (!overrideSelection) showToast("error", "Önce bir alan seçmelisiniz.");
-      setCaptureBusy(false); 
-      return;
-    }
-
-    setOcrBusy(true);
-    setQrResult(null); // Reset QR on new scan
-
-    try {
-      const croppedDataUrl = await cropImageToBase64(captureImage!, target, filters);
-      
-      // Attempt QR Scan
-      const qrRes = await scanQrCode(croppedDataUrl);
-      if (qrRes) setQrResult(qrRes);
-      // OCR icin sadece base64 kismi lazimsa split yapalim
-      // const base64Data = croppedDataUrl.split(",")[1];
-      
-      const result = await invoke<OcrResponse>("run_ocr", {
-        input: {
-          imagePath: captureImagePath,
-          imageBase64: captureImagePath ? undefined : croppedDataUrl.split(",")[1],
-          enhance: true,
-          languages: ocrLanguages,
-          crop: captureImagePath ? target : undefined,
-        },
-      });
-      setOcrText(result.text);
-      setOcrEngine(result.engine);
-      setOcrWords(result.words ?? []);
-      setLastError("");
-      if (!result.text.trim()) {
-        showToast("error", "OCR tamamlandı ancak metin bulunamadı.");
-      } else {
-        showToast("success", "OCR tamamlandı.");
-      }
-
-      // Auto-copy if enabled
-      if (autoCopy && result.text.trim()) {
-          navigator.clipboard.writeText(result.text.trim()).catch(() => {});
-      }
-
-      // Save to History (Using thumbnail to save RAM)
-      const thumbnail = await createThumbnail(croppedDataUrl || captureImage || "", 300);
-      const newItem: HistoryItem = {
-          id: Date.now().toString(),
-          imageBase64: thumbnail,
-          text: result.text,
-          date: new Date().toISOString()
-      };
-      
-      const newHistory = [newItem, ...history].slice(0, 50);
-      setHistory(newHistory);
-      
-      try {
-          const store = storeRef.current || await Store.load("settings.json");
-          if (!storeRef.current) storeRef.current = store;
-          await store.set("history", newHistory);
-          await store.save();
-      } catch (e) {
-          console.error("History save failed:", e);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("OCR Hatasi:", error);
-      setLastError(message);
-      showToast("error", `OCR hatası: ${message}`);
-    } finally {
-      setOcrBusy(false);
-      setCaptureBusy(false); // Yakalama sureci burada tam bitiyor
-      setCapturePhase('idle');
-    }
-  };
-
-  const handleCopy = async (formattedText?: string) => {
-    const textToCopy = formattedText ?? ocrText;
-    if (!textToCopy.trim()) {
-      showToast("error", "Kopyalanacak metin yok.");
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      showToast("success", "Metin panoya kopyalandı.");
-    } catch {
-      showToast("error", "Kopyalama başarısız.");
-    }
-  };
-
-  // ESC ile snipping iptali
-  useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-        if (e.key === "Escape" && isSnippingMode) {
-            setIsSnippingMode(false);
-            setCapturePhase('idle');
-            const appWindow = getCurrentWindow();
-            await appWindow.setFullscreen(false);
-            setCaptureBusy(false);
-        }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSnippingMode]);
-
-  const handleHistoryDelete = async (id: string) => {
-      const newHistory = history.filter(item => item.id !== id);
-      setHistory(newHistory);
-      try {
-          const store = storeRef.current || await Store.load("settings.json");
-          if (!storeRef.current) storeRef.current = store;
-          await store.set("history", newHistory);
-          await store.save();
-      } catch (e) {
-          console.error("Failed to delete history item:", e);
-      }
-  };
-
-  const handleHistoryClear = async () => {
-      setHistory([]);
-      try {
-          const store = storeRef.current || await Store.load("settings.json");
-          if (!storeRef.current) storeRef.current = store;
-          await store.set("history", []);
-          await store.save();
-      } catch (e) {
-          console.error("Failed to clear history:", e);
-      }
-  };
-
-  const handleClearWorkspace = () => {
-    setCaptureImage(null);
-    setCaptureImagePath(null);
-    setOcrText("");
-    setOcrEngine("");
-    setOcrWords([]);
+    setQrResult(null);
     setLastError("");
-    setSelections([]);
-  };
-
-  // Panodan görüntü oku ve OCR'a gönder
-  const handleClipboardOcr = async () => {
     try {
-      if (!navigator.clipboard || !navigator.clipboard.read) {
-        showToast("error", "Tarayıcı pano okuma desteği yok.");
-        return;
-      }
-      const items = await navigator.clipboard.read();
-      let found = false;
-      for (const item of items) {
-        const imageType = item.types.find((t) => t.startsWith("image/"));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const reader = new FileReader();
-          const dataUrl = await new Promise<string>((res, rej) => {
-            reader.onload = () => res(reader.result as string);
-            reader.onerror = rej;
-            reader.readAsDataURL(blob);
-          });
-          found = true;
-          await handleImageOcr(dataUrl);
-          break;
-        }
-      }
-      if (!found) {
-        showToast("error", "Panoda görüntü bulunamadı.");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      showToast("error", `Pano okunamadı: ${msg}`);
+      const resp = await invoke<CaptureResponse>("capture_screen", { monitorId: selectedMonitor });
+      setCaptureImage(convertFileSrc(resp.imagePath));
+      setIsSnippingMode(true);
+      setSelections([]);
+      setOcrText("");
+      showToast("success", "toastCaptured");
+    } catch (e) {
+      setLastError(String(e));
+      showToast("error", "toastOcrError");
+    } finally {
+      setCaptureBusy(false);
     }
-  };
+  }, [captureBusy, selectedMonitor, showToast]);
 
-  // Dosyadan veya panodan gelen görüntüyü direkt OCR'a gönder
-  const handleImageOcr = async (dataUrl: string) => {
-    if (captureBusy || ocrBusy) return;
-    setCaptureBusy(true);
+  const handleOcr = useCallback(async (rects: Rect[]) => {
+    if (!captureImage || rects.length === 0 || ocrBusy) return;
     setOcrBusy(true);
-    setQrResult(null); // Reset QR
-    setCapturePhase('ocr');
-
-    // Görseli ekrana yükle (geçmiş için thumbnail)
-    setCaptureImage(dataUrl);
-    setCaptureImagePath(null); // Dosya yuklendiginde eski capture yolunu sifirla
-    setOcrText("");
-    setOcrEngine("");
     setLastError("");
-
     try {
-      // Görüntü boyutlarını alalım
-      const img = new Image();
-      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
-      setCaptureSize({ width: img.naturalWidth, height: img.naturalHeight });
-
-      const qrRes = await scanQrCode(dataUrl);
-      if (qrRes) setQrResult(qrRes);
-
-      const base64Only = dataUrl.split(",")[1];
-      
-      const result = await invoke<OcrResponse>("run_ocr", {
-        input: { 
-          imageBase64: base64Only, 
-          enhance: true,
-          languages: ocrLanguages 
-        },
+      const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
+      const resp = await invoke<OcrResponse>("run_ocr", { 
+        imageBase64: croppedBase64.split(",")[1], 
+        languages: ocrLanguages 
       });
+      
+      setOcrText(resp.text);
+      setOcrEngine(resp.engine);
+      setOcrWords(resp.words);
+      
+      const qr = await scanQrCode(croppedBase64);
+      setQrResult(qr);
 
-      setOcrText(result.text);
-      setOcrEngine(result.engine);
-      setOcrWords(result.words ?? []);
-      if (!result.text.trim()) {
-        showToast("error", "OCR tamamlandı ancak metin bulunamadı.");
-      } else {
-        showToast("success", "OCR tamamlandı.");
+      if (autoCopy && resp.text) {
+        await invoke("copy_to_clipboard", { text: resp.text });
+        showToast("success", "toastTextCopied");
       }
 
-      // Auto-copy if enabled
-      if (autoCopy && result.text.trim()) {
-          navigator.clipboard.writeText(result.text.trim()).catch(() => {});
-      }
-
-      // Save to History (Using thumbnail to save RAM)
-      const thumbnail = await createThumbnail(dataUrl, 300);
       const newItem: HistoryItem = {
-        id: Date.now().toString(),
-        imageBase64: thumbnail,
-        text: result.text,
+        id: crypto.randomUUID(),
+        imageBase64: await createThumbnail(croppedBase64),
+        text: resp.text,
         date: new Date().toISOString(),
       };
+      
       const newHistory = [newItem, ...history].slice(0, 50);
       setHistory(newHistory);
-      try {
-        const store = await Store.load("settings.json");
-        await store.set("history", newHistory);
-        await store.save();
-      } catch {}
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLastError(message);
-      showToast("error", `OCR hatası: ${message}`);
+      if (storeRef.current) {
+        await storeRef.current.set("history", newHistory);
+        await storeRef.current.save();
+      }
+    } catch (e) {
+      setLastError(String(e));
+      showToast("error", "toastOcrError");
     } finally {
       setOcrBusy(false);
-      setCaptureBusy(false);
-      setCapturePhase('idle');
+      setIsSnippingMode(false);
     }
-  };
+  }, [autoCopy, captureImage, history, ocrBusy, ocrLanguages, showToast]);
+
+  const handleClipboardOcr = useCallback(async () => {
+    if (ocrBusy) return;
+    setOcrBusy(true);
+    setLastError("");
+    try {
+      const imageBase64 = await invoke<string>("read_clipboard_image");
+      if (!imageBase64) {
+        showToast("error", "toastClipboardEmpty");
+        return;
+      }
+
+      const resp = await invoke<OcrResponse>("run_ocr", { 
+        imageBase64, 
+        languages: ocrLanguages 
+      });
+
+      setOcrText(resp.text);
+      setOcrEngine(resp.engine);
+      setOcrWords(resp.words);
+      setCaptureImage(`data:image/png;base64,${imageBase64}`);
+      setSelections([]);
+      setQrResult(null);
+
+      if (autoCopy && resp.text) {
+        await invoke("copy_to_clipboard", { text: resp.text });
+        showToast("success", "toastTextCopied");
+      }
+
+      const newItem: HistoryItem = {
+        id: crypto.randomUUID(),
+        imageBase64: await createThumbnail(`data:image/png;base64,${imageBase64}`),
+        text: resp.text,
+        date: new Date().toISOString(),
+      };
+      
+      const newHistory = [newItem, ...history].slice(0, 50);
+      setHistory(newHistory);
+      if (storeRef.current) {
+        await storeRef.current.set("history", newHistory);
+        await storeRef.current.save();
+      }
+    } catch (e) {
+      setLastError(String(e));
+      showToast("error", "toastOcrError");
+    } finally {
+      setOcrBusy(false);
+    }
+  }, [autoCopy, history, ocrBusy, ocrLanguages, showToast]);
+
+  // Shortcut Management
+  useEffect(() => {
+    const setupShortcuts = async () => {
+      try {
+        const registered = await isRegistered(currentShortcut);
+        if (registered) await unregister(currentShortcut);
+        
+        await register(currentShortcut, (event) => {
+          if (event.state === "Pressed") {
+            handleNewCapture();
+          }
+        });
+      } catch {}
+    };
+    setupShortcuts();
+    return () => { unregister(currentShortcut).catch(() => {}); };
+  }, [currentShortcut, handleNewCapture]);
+
+  const handleImageSelect = useCallback((path: string) => {
+    setCaptureImage(convertFileSrc(path));
+    setIsSnippingMode(true);
+    setSelections([]);
+    setOcrText("");
+  }, []);
+
+  const handleClear = useCallback(() => {
+    setCaptureImage(null);
+    setSelections([]);
+    setOcrText("");
+    setOcrWords([]);
+    setQrResult(null);
+    setLastError("");
+  }, []);
+
+  const handleCopy = useCallback((formattedText: string) => {
+    if (!formattedText) return;
+    invoke("copy_to_clipboard", { text: formattedText });
+    showToast("success", "toastTextCopied");
+  }, [showToast]);
+
+  const handleDeleteHistory = useCallback(async (id: string) => {
+    setHistory(prev => {
+        const next = prev.filter(item => item.id !== id);
+        if (storeRef.current) {
+            storeRef.current.set("history", next).then(() => storeRef.current?.save());
+        }
+        return next;
+    });
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    setHistory([]);
+    if (storeRef.current) {
+        await storeRef.current.set("history", []);
+        await storeRef.current.save();
+    }
+    showToast("success", "toastHistoryCleared");
+  }, [showToast]);
+
+  const handleShortcutUpdate = useCallback(async (newShortcut: string) => {
+    try {
+      await unregister(currentShortcut);
+      await register(newShortcut, (event) => {
+        if (event.state === "Pressed") handleNewCapture();
+      });
+      setCurrentShortcut(newShortcut);
+      if (storeRef.current) {
+        await storeRef.current.set("global-shortcut", newShortcut);
+        await storeRef.current.save();
+      }
+      showToast("success", "toastShortcutUpdated");
+    } catch {
+      showToast("error", "toastOcrError");
+    }
+  }, [currentShortcut, handleNewCapture, showToast]);
 
   return (
-    <main className={`app-shell ${isSnippingMode ? 'snipping-active' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      {!isSnippingMode && (
-          <HeaderBar
-            isCaptureBusy={captureBusy}
-            isOcrBusy={ocrBusy}
-            onCapture={handleNewCapture}
-            onExtract={() => handleExtractText()}
-            onSettingsClick={() => setIsSettingsOpen(true)}
-            onHistoryClick={() => setIsHistoryOpen(true)}
-            onClear={handleClearWorkspace}
-            onClipboardOcr={handleClipboardOcr}
-            canExtract={captureImage !== null}
-            monitors={monitors}
-            selectedMonitor={selectedMonitor}
-            onMonitorSelect={setSelectedMonitor}
-            appVersion="1.3.3"
+    <div className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <HeaderBar 
+        isCaptureBusy={captureBusy}
+        isOcrBusy={ocrBusy}
+        canExtract={!!captureImage && selections.length > 0}
+        onCapture={handleNewCapture}
+        onExtract={() => handleOcr(selections)}
+        onSettingsClick={() => setIsSettingsOpen(true)}
+        onHistoryClick={() => setIsHistoryOpen(true)}
+        onClear={handleClear}
+        onClipboardOcr={handleClipboardOcr}
+        monitors={monitors}
+        selectedMonitor={selectedMonitor}
+        onMonitorSelect={setSelectedMonitor}
+        appVersion="1.3.5"
+      />
+
+      <main className="workspace-grid">
+        <section className="panel capture-panel">
+          <SnippingArea 
+            imageSrc={captureImage}
+            onSelectionComplete={(rects) => {
+              setSelections(rects);
+              handleOcr(rects);
+            }}
+            onImageSelect={handleImageSelect}
+            isSnippingMode={isSnippingMode}
+            loading={ocrBusy}
           />
-      )}
+        </section>
 
-      <section className="workspace-grid" style={isSnippingMode ? { display: 'block', height: '100vh', width: '100vw', margin: 0, padding: 0 } : {}}>
-        <article className="panel" style={isSnippingMode ? { border: 0, borderRadius: 0, height: '100%', background: 'black' } : {}}>
-           {!isSnippingMode && (
-               <div className="panel-header">
-                  <h2 className="panel-title">Yakalama Alanı</h2>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    {capturePhase !== 'idle' && (
-                      <div className="progress-steps">
-                        <div className={`progress-step ${capturePhase === 'capturing' ? 'active' : (capturePhase === 'selecting' || capturePhase === 'ocr') ? 'done' : ''}`}>
-                          <span className="progress-step-dot"></span>
-                          <span className="progress-step-label">Yakalama</span>
-                        </div>
-                        <div className="progress-step-line"></div>
-                        <div className={`progress-step ${capturePhase === 'selecting' ? 'active' : capturePhase === 'ocr' ? 'done' : ''}`}>
-                          <span className="progress-step-dot"></span>
-                          <span className="progress-step-label">Seçim</span>
-                        </div>
-                        <div className="progress-step-line"></div>
-                        <div className={`progress-step ${capturePhase === 'ocr' ? 'active' : ''}`}>
-                          <span className="progress-step-dot"></span>
-                          <span className="progress-step-label">OCR</span>
-                        </div>
-                      </div>
-                    )}
-                    {selections.length === 1 && capturePhase === 'idle' && (
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                        {Math.round(selections[0].width)} x {Math.round(selections[0].height)} px
-                      </span>
-                    )}
-                    {selections.length > 1 && capturePhase === 'idle' && (
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                        {selections.length} Alan Seçildi
-                      </span>
-                    )}
-                  </div>
-               </div>
-           )}
-           
-           <div className="panel-content" style={{ padding: 0, background: isSnippingMode ? '#000' : 'var(--panel-bg)', height: isSnippingMode ? '100%' : 'auto' }}>
-               <CaptureCanvas
-                 imageSrc={captureImage}
-                 naturalSize={captureSize}
-                 selections={selections}
-                 onSelectionsChange={setSelections}
-                 loading={ocrBusy}
-                 isSnippingMode={isSnippingMode}
-                 onSelectionComplete={handleSelectionComplete}
-                  onBatchOcr={handleBatchOcr}
-                 currentShortcut={currentShortcut}
-                 onFileOcr={handleImageOcr}
-                 filters={filters}
-                 onFiltersChange={setFilters}
-               />
-           </div>
-        </article>
+        <ResultPanel 
+          text={ocrText}
+          loading={ocrBusy}
+          onCopy={handleCopy}
+          engine={ocrEngine}
+          error={lastError}
+          words={ocrWords}
+          captureImage={captureImage}
+          selections={selections}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          qrResult={qrResult}
+        />
+      </main>
 
-        {!isSnippingMode && (
-            <ResultPanel 
-                text={ocrText} 
-                loading={ocrBusy} 
-                onCopy={handleCopy} 
-                engine={ocrEngine} 
-                error={lastError}
-                words={ocrWords}
-                captureImage={captureImage}
-                selections={selections}
-                isCollapsed={isSidebarCollapsed}
-                onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                qrResult={qrResult}
-            />
-        )}
-      </section>
-
-      <StatusToast state={toast} />
+      <HistoryModal 
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        history={history}
+        onDelete={handleDeleteHistory}
+        onClear={handleClearHistory}
+        onCopy={handleCopy}
+      />
 
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="1.3.3"
+        appVersion="1.3.4"
         currentShortcut={currentShortcut}
-        onShortcutUpdate={(newShortcut) => setCurrentShortcut(newShortcut)}
-        ocrLanguages={ocrLanguages}
+        onShortcutUpdate={handleShortcutUpdate}
+        ocrLanguages={ocrLanguages.split("+")}
         onOcrLanguagesUpdate={async (langs) => {
-          setOcrLanguages(langs);
-          try {
-            const store = storeRef.current || await Store.load("settings.json");
-            if (!storeRef.current) storeRef.current = store;
-            await store.set("ocr-languages", langs);
-            await store.save();
-          } catch {}
+          const joined = langs.join("+");
+          setOcrLanguages(joined);
+          if (storeRef.current) {
+            await storeRef.current.set("ocr-languages", joined);
+            await storeRef.current.save();
+          }
         }}
         autoCopy={autoCopy}
         onAutoCopyUpdate={async (val) => {
-            setAutoCopy(val);
-            try {
-                const store = storeRef.current || await Store.load("settings.json");
-                if (!storeRef.current) storeRef.current = store;
-                await store.set("auto-copy", val);
-                await store.save();
-            } catch {}
+          setAutoCopy(val);
+          if (storeRef.current) {
+            await storeRef.current.set("auto-copy", val);
+            await storeRef.current.save();
+          }
         }}
         alwaysOnTop={alwaysOnTop}
-        onAlwaysOnTopUpdate={async (val: boolean) => {
-            setAlwaysOnTop(val);
-            try {
-                getCurrentWindow().setAlwaysOnTop(val).catch(() => {});
-                const store = storeRef.current || await Store.load("settings.json");
-                if (!storeRef.current) storeRef.current = store;
-                await store.set("always-on-top", val);
-                await store.save();
-            } catch {}
+        onAlwaysOnTopUpdate={async (val) => {
+          setAlwaysOnTop(val);
+          await getCurrentWindow().setAlwaysOnTop(val);
+          if (storeRef.current) {
+            await storeRef.current.set("always-on-top", val);
+            await storeRef.current.save();
+          }
         }}
+        appLang={appLang}
       />
 
-      <HistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        history={history}
-        onDelete={handleHistoryDelete}
-        onClear={handleHistoryClear}
-        onCopy={(text) => {
-            navigator.clipboard.writeText(text);
-            showToast("success", "Geçmiş metni kopyalandı.");
-        }}
-      />
-    </main>
+      <StatusToast state={toast} />
+    </div>
   );
 }
-
-export default App;

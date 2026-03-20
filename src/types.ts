@@ -1,4 +1,6 @@
-export type ThemeMode = "light" | "dark";
+import { TranslationKeys } from "./i18n/translations";
+
+export type ThemeMode = "light" | "dark" | "system";
 
 export type Rect = {
   x: number;
@@ -52,6 +54,6 @@ export type ImageFilters = {
 };
 
 export type ToastState = {
-  kind: "hidden" | "success" | "error";
-  message: string;
+  kind: "hidden" | "success" | "error" | "info";
+  message: TranslationKeys | string;
 };

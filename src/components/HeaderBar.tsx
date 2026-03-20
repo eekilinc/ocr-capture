@@ -1,5 +1,5 @@
-// Replacing the old HeaderBar with the new styled version
 import type { MonitorInfo } from "../types";
+import { useTranslation } from "../hooks/useTranslation";
 
 type HeaderBarProps = {
   isCaptureBusy: boolean;
@@ -32,14 +32,16 @@ export const HeaderBar = ({
   onMonitorSelect,
   appVersion,
 }: HeaderBarProps) => {
+  const { t } = useTranslation();
+
   return (
     <header className="header-panel">
       <div className="brand">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <h1>Metin Yakalayıcı</h1>
+            <h1>{t("appName")}</h1>
             <span className="version-badge-sm">v{appVersion}</span>
         </div>
-        <p>Ekran görüntüsünden metin ayıkla</p>
+        <p>{t("appDesc")}</p>
       </div>
 
       <div className="header-controls">
@@ -52,10 +54,10 @@ export const HeaderBar = ({
           }}
           disabled={isCaptureBusy}
         >
-          <option value={-1}>Tüm Ekranlar</option>
+          <option value={-1}>{t("allScreens")}</option>
           {monitors.map((monitor) => (
             <option key={monitor.id} value={monitor.id}>
-              {monitor.name} {monitor.isPrimary ? "(Ana Ekran)" : `(${monitor.id + 1}. Ekran)`} - {monitor.width}x{monitor.height}
+              {monitor.name} {monitor.isPrimary ? t("primaryScreen") : `(${monitor.id + 1}${t("screenSuffix")})`} - {monitor.width}x{monitor.height}
             </option>
           ))}
         </select>
@@ -64,7 +66,7 @@ export const HeaderBar = ({
           className="btn btn-secondary btn-icon"
           onClick={onClipboardOcr}
           disabled={isCaptureBusy || isOcrBusy}
-          title="Panodan OCR"
+          title={t("btnClipboard")}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
@@ -75,7 +77,7 @@ export const HeaderBar = ({
         <button 
             className="btn btn-secondary btn-icon" 
             onClick={onHistoryClick} 
-            title="Geçmiş"
+            title={t("btnHistory")}
         >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 8v4l3 3m6-3a9 9 0 1 1-9-9 9 9 0 0 1 9 9z"></path>
@@ -85,7 +87,7 @@ export const HeaderBar = ({
         <button 
             className="btn btn-secondary btn-icon" 
             onClick={onSettingsClick} 
-            title="Ayarlar"
+            title={t("btnSettings")}
         >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
@@ -100,12 +102,12 @@ export const HeaderBar = ({
         >
           {isCaptureBusy ? (
              <>
-               <span className="spinner-sm"></span> Yakalanıyor...
+               <span className="spinner-sm"></span> {t("btnCapturing")}
              </>
           ) : (
              <>
                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-               Yeni Yakalama
+               {t("btnNewCapture")}
              </>
           )}
         </button>
@@ -116,7 +118,7 @@ export const HeaderBar = ({
                     className="btn btn-secondary btn-icon" 
                     onClick={onClear} 
                     disabled={isOcrBusy}
-                    title="Temizle"
+                    title={t("btnClear")}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="3 6 5 6 21 6"></polyline>
@@ -129,7 +131,7 @@ export const HeaderBar = ({
                     disabled={isOcrBusy}
                     style={{ borderColor: "var(--primary-color)", color: "var(--primary-color)" }}
                 >
-                 {isOcrBusy ? "Çıkarılıyor..." : "Metni Çıkar"}
+                 {isOcrBusy ? t("btnExtracting") : t("btnExtract")}
                 </button>
             </>
         )}

@@ -1,35 +1,33 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Store } from "@tauri-apps/plugin-store";
-import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "../hooks/useTranslation";
+import { Language } from "../i18n/translations";
+import { relaunch } from "@tauri-apps/plugin-process";
 
-type Tab = "general" | "shortcut" | "about";
+type Tab = "general" | "shortcut" | "ocr" | "appearance" | "about";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  theme: "light" | "dark";
-  onThemeChange: (theme: "light" | "dark") => void;
+  theme: "light" | "dark" | "system";
+  onThemeChange: (theme: "light" | "dark" | "system") => void;
   appVersion: string;
   currentShortcut: string;
   onShortcutUpdate?: (newShortcut: string) => void;
-  ocrLanguages: string;
-  onOcrLanguagesUpdate: (langs: string) => void;
+  ocrLanguages: string[];
+  onOcrLanguagesUpdate: (langs: string[]) => void;
   autoCopy: boolean;
   onAutoCopyUpdate: (val: boolean) => void;
   alwaysOnTop: boolean;
   onAlwaysOnTopUpdate: (val: boolean) => void;
+  appLang: Language;
 }
 
-// Convert Tauri shortcut string -> display segments, e.g. "Control+Shift+F9" -> ["Ctrl","Shift","F9"]
-function shortcutToKeys(shortcut: string): string[] {
-  return shortcut.split("+").map((k) => {
-    if (k === "Control") return "Ctrl";
-    if (k === "Meta" || k === "Command" || k === "Super") return "⌘";
-    if (k === "Option") return "⌥";
-    return k;
-  });
-}
+const shortcutToKeys = (shortcut: string) => {
+  return shortcut.split("+").map((s) => (s === "Control" ? "Ctrl" : s));
+};
 
 export const SettingsModal = ({
   isOpen,
@@ -45,153 +43,62 @@ export const SettingsModal = ({
   onAutoCopyUpdate,
   alwaysOnTop,
   onAlwaysOnTopUpdate,
+  appLang,
 }: SettingsModalProps) => {
+  const { t, setLang: onAppLangChange } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
-  const [store, setStore] = useState<Store | null>(null);
-  const langsCachedRef = useRef<boolean>(false);
-
-  // Language selection state
-  const [availableLangs, setAvailableLangs] = useState<string[]>([]);
-  const [selectedLangs, setSelectedLangs] = useState<string[]>(() => ocrLanguages.split("+").filter(Boolean));
-
-  // Shortcut recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
-  const [recordError, setRecordError] = useState<string>("");
-  const recordingRef = useRef(false);
-  recordingRef.current = isRecording;
+  const [recordError, setRecordError] = useState("");
+  const storeRef = useRef<Store | null>(null);
+  const [availableLangs, setAvailableLangs] = useState<string[]>(["tur", "eng"]);
 
-  // Load settings when modal opens
   useEffect(() => {
-    if (!isOpen) return;
-    const loadStore = async () => {
+    const init = async () => {
       try {
-        const _store = await Store.load("settings.json");
-        setStore(_store);
-        const val = await _store.get<boolean>("minimize-to-tray");
-        setMinimizeToTray(val ?? true);
-        const auto = await isEnabled();
-        setAutostartEnabled(auto);
+        const store = await Store.load("settings.json");
+        storeRef.current = store;
+        const tray = await store.get<boolean>("minimize-to-tray");
+        if (tray !== null && tray !== undefined) setMinimizeToTray(tray);
+        
+        const isAuto = await isEnabled();
+        setAutostartEnabled(isAuto);
+
+        try {
+          const langs = await invoke<string[]>("list_ocr_languages");
+          if (langs && langs.length > 0) setAvailableLangs(langs);
+        } catch (e) {
+          console.error("Failed to fetch languages:", e);
+        }
       } catch (e) {
-        console.error("Store load failed:", e);
+        console.error("Settings initialization failed:", e);
       }
     };
-    const loadLangs = async () => {
-      if (langsCachedRef.current && availableLangs.length > 0) return;
-      try {
-        const langs = await invoke<string[]>("list_ocr_languages");
-        setAvailableLangs(langs);
-        langsCachedRef.current = true;
-      } catch {
-        // Tesseract may not be installed yet — silently ignore
-      }
-    };
-    loadStore();
-    loadLangs();
+    if (isOpen) init();
   }, [isOpen]);
 
-  // Reset recording state when tab changes or modal closes
-  useEffect(() => {
-    setIsRecording(false);
-    setRecordedKeys([]);
-    setRecordError("");
-  }, [activeTab, isOpen]);
+  const handleAutostartToggle = async (val: boolean) => {
+    setAutostartEnabled(val);
+    try {
+      if (val) await enable();
+      else await disable();
+    } catch {}
+  };
 
-  // Shortcut recording keyboard handler
-  useEffect(() => {
-    if (!isRecording) return;
-
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.repeat) return;
-
-      // ESC cancels
-      if (e.key === "Escape") {
-        setIsRecording(false);
-        setRecordedKeys([]);
-        setRecordError("");
-        return;
-      }
-
-      const modifierKeys = ["Control", "Alt", "Shift", "Meta", "OS"];
-      const isMod = modifierKeys.includes(e.key);
-
-      // Build modifier list (live display while holding)
-      const mods: string[] = [];
-      if (e.ctrlKey) mods.push("Control");
-      if (e.altKey) mods.push("Alt");
-      if (e.shiftKey) mods.push("Shift");
-      if (e.metaKey) mods.push("Meta");
-
-      if (isMod) {
-        // Still waiting for a real key — show current mods as hint
-        setRecordedKeys(mods.map((m) => (m === "Control" ? "Ctrl" : m)));
-        return;
-      }
-
-      // Map key to Tauri-compatible format
-      let key = e.key;
-      if (key === " ") key = "Space";
-      else if (key.length === 1) key = key.toUpperCase();
-
-      const shortcutParts = [...mods, key];
-      const shortcutString = shortcutParts.join("+");
-
-      // Require at least one modifier
-      if (mods.length === 0) {
-        setRecordError("En az bir modifier (Ctrl, Alt, Shift) gerekli.");
-        setRecordedKeys([key]);
-        return;
-      }
-
-      // Warn about Ctrl+Alt combos on Windows (AltGr collision)
-      if (e.ctrlKey && e.altKey) {
-        setRecordError(
-          "Ctrl+Alt kombinasyonu Windows'ta AltGr ile çakışabilir."
-        );
-      } else {
-        setRecordError("");
-      }
-
-      setRecordedKeys(shortcutParts.map((k) => (k === "Control" ? "Ctrl" : k)));
-      setIsRecording(false);
-
-      // Save
-      if (store) {
-        await store.set("global-shortcut", shortcutString);
-        await store.save();
-      }
-      if (onShortcutUpdate) {
-        onShortcutUpdate(shortcutString);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [isRecording, store, onShortcutUpdate]);
-
-  // Sync selectedLangs when parent ocrLanguages prop changes
-  useEffect(() => {
-    setSelectedLangs(ocrLanguages.split("+").filter(Boolean));
-  }, [ocrLanguages]);
-
-  const toggleLang = (lang: string) => {
-    const next = selectedLangs.includes(lang)
-      ? selectedLangs.filter((l) => l !== lang)
-      : [...selectedLangs, lang];
-    // Always keep at least one language selected
-    if (next.length === 0) return;
-    setSelectedLangs(next);
-    onOcrLanguagesUpdate(next.join("+"));
+  const handleMinimizeToggle = async (val: boolean) => {
+    setMinimizeToTray(val);
+    if (storeRef.current) {
+      await storeRef.current.set("minimize-to-tray", val);
+      await storeRef.current.save();
+    }
   };
 
   const startRecording = () => {
+    setIsRecording(true);
     setRecordedKeys([]);
     setRecordError("");
-    setIsRecording(true);
   };
 
   const cancelRecording = () => {
@@ -200,244 +107,95 @@ export const SettingsModal = ({
     setRecordError("");
   };
 
-  const toggleAutostart = async () => {
-    try {
-      if (autostartEnabled) {
-        await disable();
-        setAutostartEnabled(false);
-      } else {
-        await enable();
-        setAutostartEnabled(true);
-      }
-    } catch (err) {
-      console.error("Autostart toggle error:", err);
-    }
-  };
+  useEffect(() => {
+    if (!isRecording) return;
 
-  const toggleMinimizeToTray = async () => {
-    if (!store) return;
-    const newValue = !minimizeToTray;
-    setMinimizeToTray(newValue);
-    await store.set("minimize-to-tray", newValue);
-    await store.save();
-  };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        cancelRecording();
+        return;
+      }
+
+      const mods = [];
+      if (e.ctrlKey) mods.push("Control");
+      if (e.shiftKey) mods.push("Shift");
+      if (e.altKey) mods.push("Alt");
+      if (e.metaKey) mods.push("Command");
+
+      const key = e.key === " " ? "Space" : 
+                  e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      
+      const isModifier = ["Control", "Shift", "Alt", "Meta", "OS"].includes(e.key);
+      
+      if (!isModifier) {
+        if (mods.length === 0) {
+            setRecordError(t("tipModifierRequired"));
+            setRecordedKeys([key]);
+            return;
+        }
+
+        const newShortcut = [...mods, key].join("+");
+        onShortcutUpdate?.(newShortcut);
+        setIsRecording(false);
+        return;
+      }
+
+      setRecordedKeys([...mods]);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [isRecording, onShortcutUpdate, t]);
 
   if (!isOpen) return null;
 
-  const displayKeys = isRecording && recordedKeys.length > 0
-    ? recordedKeys
+  const displayKeys = isRecording 
+    ? recordedKeys.map(k => k === "Control" ? "Ctrl" : k)
     : shortcutToKeys(currentShortcut);
-
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    {
-      id: "general",
-      label: "Genel",
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      ),
-    },
-    {
-      id: "shortcut",
-      label: "Kısayol",
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="6" width="20" height="13" rx="2" />
-          <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
-        </svg>
-      ),
-    },
-    {
-      id: "about",
-      label: "Hakkında",
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="16" x2="12" y2="12" />
-          <line x1="12" y1="8" x2="12.01" y2="8" />
-        </svg>
-      ),
-    },
-  ];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content settings-modal-content" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="settings-modal-header">
-          <div className="settings-modal-brand">
-            <div className="settings-modal-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </div>
-            <span>Ayarlar</span>
-          </div>
-          <button className="btn-icon-sm" onClick={onClose} title="Kapat">
+      <div className="modal-content" style={{ width: '680px', height: '680px', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{t("settings")}</h3>
+          <button className="btn-icon-sm" onClick={onClose} title={t("close")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="modal-body">
-          {/* Sidebar */}
+        <div className="modal-body" style={{ flex: 1, minHeight: 0 }}>
           <div className="sidebar">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`sidebar-item ${activeTab === tab.id ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
+            <button className={`sidebar-item ${activeTab === 'general' ? 'active' : ''}`} onClick={() => setActiveTab('general')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+              <span>{t("general")}</span>
+            </button>
+            <button className={`sidebar-item ${activeTab === 'shortcut' ? 'active' : ''}`} onClick={() => setActiveTab('shortcut')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+              <span>{t("shortcut")}</span>
+            </button>
+            <button className={`sidebar-item ${activeTab === 'ocr' ? 'active' : ''}`} onClick={() => setActiveTab('ocr')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V4a2 2 0 0 1 2-2h2"/><path d="M20 7V4a2 2 0 0 0-2-2h-2"/><path d="M4 17v3a2 2 0 0 0 2 2h2"/><path d="M20 17v3a2 2 0 0 1-2 2h-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+              <span>{t("ocrLang")}</span>
+            </button>
+            <button className={`sidebar-item ${activeTab === 'appearance' ? 'active' : ''}`} onClick={() => setActiveTab('appearance')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20v-20Z"/></svg>
+              <span>{t("appearance")}</span>
+            </button>
+            <button className={`sidebar-item ${activeTab === 'about' ? 'active' : ''}`} onClick={() => setActiveTab('about')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>{t("about")}</span>
+            </button>
           </div>
 
-          {/* Tab Content */}
-          <div className="tab-content">
-            {/* GENERAL TAB */}
+          <div className="tab-content" style={{ flex: 1, overflowY: 'auto', paddingRight: '0.5rem' }}>
             {activeTab === "general" && (
               <div className="settings-group">
-                {/* Theme */}
                 <div className="setting-item">
-                  <div className="setting-label">
-                    <div className="setting-label-icon">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="5" />
-                        <line x1="12" y1="1" x2="12" y2="3" />
-                        <line x1="12" y1="21" x2="12" y2="23" />
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                        <line x1="1" y1="12" x2="3" y2="12" />
-                        <line x1="21" y1="12" x2="23" y2="12" />
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span>Görünüm Teması</span>
-                      <small>Açık veya koyu modu seçin</small>
-                    </div>
-                  </div>
-                  <div className="theme-toggle-group">
-                    <button
-                      className={`theme-btn ${theme === "light" ? "active" : ""}`}
-                      onClick={() => onThemeChange("light")}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                      </svg>
-                      Açık
-                    </button>
-                    <button
-                      className={`theme-btn ${theme === "dark" ? "active" : ""}`}
-                      onClick={() => onThemeChange("dark")}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                      </svg>
-                      Koyu
-                    </button>
-                  </div>
-                </div>
-
-                {/* Autostart */}
-                <div className="setting-item">
-                  <div className="setting-label">
-                    <div className="setting-label-icon">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="5 3 19 12 5 21 5 3" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span>Windows ile Başlat</span>
-                      <small>Bilgisayar açıldığında uygulamayı başlat</small>
-                    </div>
-                  </div>
-                  <label className="switch">
-                    <input type="checkbox" checked={autostartEnabled} onChange={toggleAutostart} />
-                    <span className="slider round"></span>
-                  </label>
-                </div>
-
-                {/* Minimize to tray */}
-                <div className="setting-item">
-                  <div className="setting-label">
-                    <div className="setting-label-icon">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                      </svg>
-                    </div>
-                    <div>
-                      <span>Tepsiye Küçült</span>
-                      <small>Kapatıldığında sistem tepsisine gizle</small>
-                    </div>
-                  </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={minimizeToTray}
-                      onChange={toggleMinimizeToTray}
-                      disabled={!store}
-                    />
-                    <span className="slider round"></span>
-                  </label>
-                </div>
-
-                {/* Auto Copy */}
-                <div className="setting-item">
-                  <div className="setting-label">
-                    <div className="setting-label-icon">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <span>Otomatik Kopyala</span>
-                      <small>OCR sonrası metni panoya otomatik kopyala</small>
-                    </div>
-                  </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={autoCopy}
-                      onChange={(e) => onAutoCopyUpdate(e.target.checked)}
-                    />
-                    <span className="slider round"></span>
-                  </label>
-                </div>
-
-                {/* Always On Top */}
-                <div className="setting-item">
-                  <div className="setting-label">
-                    <div className="setting-label-icon">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-                      </svg>
-                    </div>
-                    <div>
-                      <span>Her Zaman Üstte</span>
-                      <small>Pencereyi diğer uygulamaların üzerinde tut</small>
-                    </div>
-                  </div>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={alwaysOnTop}
-                      onChange={(e) => onAlwaysOnTopUpdate(e.target.checked)}
-                    />
-                    <span className="slider round"></span>
-                  </label>
-                </div>
-
-                {/* OCR Languages */}
-                <div className="setting-item" style={{ borderBottom: "none", flexDirection: "column", alignItems: "flex-start", gap: "0.75rem" }}>
                   <div className="setting-label">
                     <div className="setting-label-icon">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -445,199 +203,292 @@ export const SettingsModal = ({
                       </svg>
                     </div>
                     <div>
-                      <span>OCR Dilleri</span>
-                      <small>Tesseract'ın kullanacağı dilleri seçin</small>
+                      <span>{t("language")}</span>
+                      <small>{t("languageDesc")}</small>
+                    </div>
+                  </div>
+                  <select
+                    className="format-select"
+                    value={appLang}
+                    onChange={(e) => onAppLangChange(e.target.value as Language)}
+                    style={{ minWidth: '120px' }}
+                  >
+                    <option value="tr">{t("langTurkish")}</option>
+                    <option value="en">{t("langEnglish")}</option>
+                  </select>
+                </div>
+
+                <div className="setting-item" style={{ marginTop: '1.5rem', background: 'rgba(52, 152, 219, 0.05)', borderRadius: '12px', padding: '1rem', border: '1px solid rgba(52, 152, 219, 0.1)' }}>
+                  <div className="setting-label">
+                    <div className="setting-label-icon" style={{ color: 'var(--primary-color)' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("restartApp")}</span>
+                      <small>{t("restartDesc")}</small>
+                    </div>
+                  </div>
+                  <button className="btn btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }} onClick={() => relaunch()}>
+                    {t("btnRestart")}
+                  </button>
+                </div>
+
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2v20M2 12h20" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("autostart")}</span>
+                      <small>{t("autostartDesc")}</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={autostartEnabled} onChange={(e) => handleAutostartToggle(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                        <line x1="7" y1="2" x2="7" y2="22" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("minimizeToTray")}</span>
+                      <small>{t("minimizeToTrayDesc")}</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={minimizeToTray} onChange={(e) => handleMinimizeToggle(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("autoCopy")}</span>
+                      <small>{t("autoCopyDesc")}</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={autoCopy} onChange={(e) => onAutoCopyUpdate(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2" />
+                        <path d="M2 12h20M12 2v20" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("alwaysOnTop")}</span>
+                      <small>{t("alwaysOnTopDesc")}</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={alwaysOnTop} onChange={(e) => onAlwaysOnTopUpdate(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "appearance" && (
+              <div className="settings-group">
+                <div className="setting-item" style={{ borderBottom: "none", flexDirection: "column", alignItems: "flex-start", gap: "1rem" }}>
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("theme")}</span>
+                      <small>{t("themeDesc")}</small>
+                    </div>
+                  </div>
+                  <div className="theme-toggle-group">
+                    <button className={`theme-btn ${theme === "light" ? "active" : ""}`} onClick={() => onThemeChange("light")}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                      </svg>
+                      {t("themeLight")}
+                    </button>
+                    <button className={`theme-btn ${theme === "dark" ? "active" : ""}`} onClick={() => onThemeChange("dark")}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                      </svg>
+                      {t("themeDark")}
+                    </button>
+                    <button className={`theme-btn ${theme === "system" ? "active" : ""}`} onClick={() => onThemeChange("system")}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                      </svg>
+                      {t("themeSystem")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "ocr" && (
+              <div className="settings-group">
+                <div className="setting-item" style={{ borderBottom: "none", flexDirection: "column", alignItems: "flex-start", gap: "1rem" }}>
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 7V4a2 2 0 0 1 2-2h2" /><path d="M20 7V4a2 2 0 0 0-2-2h-2" /><path d="M4 17v3a2 2 0 0 0 2 2h2" /><path d="M20 17v3a2 2 0 0 1-2 2h-2" /><line x1="7" y1="12" x2="17" y2="12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("ocrLang")}</span>
+                      <small>{t("ocrLangDesc")}</small>
                     </div>
                   </div>
                   <div className="lang-chips">
-                    {availableLangs.length === 0 ? (
-                      <span style={{ fontSize: "0.78rem", color: "var(--text-tertiary)" }}>Tesseract kurulu değil veya dil paketi bulunamadı.</span>
-                    ) : (
-                      availableLangs.map((lang) => (
-                        <button
-                          key={lang}
-                          className={`lang-chip ${selectedLangs.includes(lang) ? "active" : ""}`}
-                          onClick={() => toggleLang(lang)}
-                          title={lang}
-                        >
-                          {lang}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  {selectedLangs.length > 0 && (
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                      Aktif: <code style={{ fontFamily: "var(--font-mono)" }}>{selectedLangs.join("+")}</code>
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* SHORTCUT TAB */}
-            {activeTab === "shortcut" && (
-              <div className="shortcut-tab-content">
-                <div className="shortcut-tab-header">
-                  <h3>Global Kısayol</h3>
-                  <p>
-                    Uygulama arka planda çalışırken bile bu kombinasyona basarak
-                    ekran yakalamayı tetikleyebilirsiniz.
-                  </p>
-                </div>
-
-                {/* Current shortcut display */}
-                <div className="shortcut-display-card">
-                  <span className="shortcut-display-label">Mevcut Kısayol</span>
-                  <div className="kbd-group">
-                    {displayKeys.map((key, i) => (
-                      <Fragment key={i}>
-                        <kbd className={isRecording ? "kbd-recording" : ""}>{key}</kbd>
-                        {i < displayKeys.length - 1 && (
-                          <span className="kbd-sep">+</span>
-                        )}
-                      </Fragment>
+                    {availableLangs.map((lang) => (
+                      <button
+                        key={lang}
+                        className={`lang-chip ${ocrLanguages.includes(lang) ? "active" : ""}`}
+                        onClick={() => {
+                          const next = ocrLanguages.includes(lang)
+                            ? ocrLanguages.filter((l) => l !== lang)
+                            : [...ocrLanguages, lang];
+                          onOcrLanguagesUpdate(next);
+                        }}
+                      >
+                        {lang}
+                      </button>
                     ))}
                   </div>
-                  {isRecording && (
-                    <span className="shortcut-recording-badge">kayıt yapılıyor</span>
+                  {ocrLanguages.length > 0 && (
+                     <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                        {t("active")}: <code>{ocrLanguages.join("+")}</code>
+                     </div>
                   )}
                 </div>
+              </div>
+            )}
 
-                {recordError && (
-                  <div className="shortcut-warning">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    {recordError}
-                  </div>
-                )}
-
-                <div className="shortcut-actions">
-                  {!isRecording ? (
-                    <button className="btn btn-primary shortcut-record-btn" onClick={startRecording}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="6" width="20" height="13" rx="2" />
-                        <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
-                      </svg>
-                      Yeni Kısayol Ata
-                    </button>
-                  ) : (
-                    <button className="btn btn-secondary shortcut-record-btn" onClick={cancelRecording}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
-                      </svg>
-                      İptal Et
-                    </button>
-                  )}
+            {activeTab === "shortcut" && (
+              <div className="shortcut-tab-content" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div className="shortcut-tab-header">
+                  <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem' }}>{t("globalShortcut")}</h3>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t("globalShortcutDesc")}</p>
+                </div>
+                
+                <div className="shortcut-recorder">
+                   <button 
+                    className={`shortcut-btn ${isRecording ? 'recording' : ''}`}
+                    onClick={isRecording ? cancelRecording : startRecording}
+                   >
+                     {isRecording ? t("recording") : displayKeys.join(" + ")}
+                   </button>
+                   {isRecording && (
+                     <div className="recording-overlay">
+                       {t("cancelRecordingTip")} <kbd>Esc</kbd>
+                     </div>
+                   )}
                 </div>
 
-                <div className="shortcut-tips">
-                  <div className="shortcut-tip-item">
-                    <kbd>Esc</kbd>
-                    <span>Kaydı iptal eder</span>
-                  </div>
-                  <div className="shortcut-tip-item">
-                    <span className="tip-dot"></span>
-                    <span>En az bir modifier (Ctrl, Alt, Shift) gereklidir</span>
-                  </div>
-                  <div className="shortcut-tip-item">
-                    <span className="tip-dot"></span>
-                    <span>Ctrl+Alt Windows'ta AltGr ile çakışabilir</span>
+                {recordError && <p className="shortcut-error" style={{ color: 'var(--danger-color)', fontSize: '0.8rem', margin: 0 }}>{recordError}</p>}
+                
+                <div className="shortcut-tips" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                   <div className="shortcut-tip-item" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
+                    <span className="tip-dot" style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'currentColor' }}></span>
+                    <span>{t("tipModifierRequired")}</span>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* ABOUT TAB */}
             {activeTab === "about" && (
-              <div className="about-content-premium">
-                {/* App logo */}
-                <div className="about-logo-wrap">
-                  <div className="about-logo-ring about-logo-ring-outer"></div>
-                  <div className="about-logo-ring about-logo-ring-mid"></div>
-                  <div className="about-logo-core">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                      <circle cx="12" cy="13" r="4" />
-                    </svg>
-                  </div>
+              <div className="about-content" style={{ padding: '2rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                <div className="app-logo-large" style={{ marginBottom: '1rem', color: 'var(--primary-color)' }}>
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="4"/><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/></svg>
                 </div>
-
-                <h2 className="about-app-name">Metin Yakalayıcı</h2>
-                <div className="about-version-badge">v{appVersion}</div>
-                <p className="about-desc">
-                  Ekranınızdaki metni anında yakalayan, hızlı, modern ve çevrimdışı çalışabilen OCR aracı.
-                </p>
-
-                {/* Stats row */}
-                <div className="about-stats">
-                  <div className="about-stat">
-                    <span className="about-stat-value">%100</span>
-                    <span className="about-stat-label">Çevrimdışı</span>
-                  </div>
-                  <div className="about-stat-divider"></div>
-                  <div className="about-stat">
-                    <span className="about-stat-value">&lt;1s</span>
-                    <span className="about-stat-label">OCR Hızı</span>
-                  </div>
-                  <div className="about-stat-divider"></div>
-                  <div className="about-stat">
-                    <span className="about-stat-value">2+</span>
-                    <span className="about-stat-label">Dil</span>
-                  </div>
-                </div>
-
-                {/* Tech stack */}
+                <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem' }}>{t("appName")}</h2>
+                <div className="version">v{appVersion}</div>
+                <p className="description" style={{ maxWidth: '400px', margin: '0.5rem auto 1.5rem' }}>{t("appDescription")}</p>
+                
                 <div className="tech-stack-section">
-                  <h4>Teknoloji Yığını</h4>
-                  <div className="tech-grid-premium">
+                  <h4 style={{ marginBottom: '1rem', opacity: 0.8 }}>{t("techStack")}</h4>
+                  <div className="tech-grid-premium" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
                     <div className="tech-card">
-                      <div className="tech-icon" style={{ backgroundColor: "#FFC131", boxShadow: "0 0 10px rgba(255,193,49,0.4)" }}></div>
+                      <div className="tech-icon" style={{ backgroundColor: "#00d8ff" }}></div>
                       <div className="tech-info">
-                        <span className="tech-name">Tauri v2</span>
-                        <span className="tech-role">Uygulama Çatısı</span>
+                        <span className="tech-name">React</span>
+                        <span className="tech-role">UI</span>
                       </div>
                     </div>
                     <div className="tech-card">
-                      <div className="tech-icon" style={{ backgroundColor: "#DEA584", boxShadow: "0 0 10px rgba(222,165,132,0.4)" }}></div>
+                      <div className="tech-icon" style={{ backgroundColor: "#2496ed" }}></div>
+                      <div className="tech-info">
+                        <span className="tech-name">Tauri</span>
+                        <span className="tech-role">Core</span>
+                      </div>
+                    </div>
+                    <div className="tech-card">
+                      <div className="tech-icon" style={{ backgroundColor: "#3178c6" }}></div>
+                      <div className="tech-info">
+                        <span className="tech-name">TS</span>
+                        <span className="tech-role">Logic</span>
+                      </div>
+                    </div>
+                    <div className="tech-card">
+                      <div className="tech-icon" style={{ backgroundColor: "#de5d43" }}></div>
                       <div className="tech-info">
                         <span className="tech-name">Rust</span>
-                        <span className="tech-role">Yüksek Performans</span>
+                        <span className="tech-role">Engine</span>
                       </div>
                     </div>
                     <div className="tech-card">
-                      <div className="tech-icon" style={{ backgroundColor: "#61DAFB", boxShadow: "0 0 10px rgba(97,218,251,0.4)" }}></div>
-                      <div className="tech-info">
-                        <span className="tech-name">React 19</span>
-                        <span className="tech-role">Kullanıcı Arayüzü</span>
-                      </div>
+                        <div className="tech-icon" style={{ backgroundColor: "#ff9900" }}></div>
+                        <div className="tech-info">
+                          <span className="tech-name">Tesseract</span>
+                          <span className="tech-role">OCR</span>
+                        </div>
                     </div>
                     <div className="tech-card">
-                      <div className="tech-icon" style={{ backgroundColor: "#3178C6", boxShadow: "0 0 10px rgba(49,120,198,0.4)" }}></div>
-                      <div className="tech-info">
-                        <span className="tech-name">TypeScript</span>
-                        <span className="tech-role">Tip Güvenliği</span>
-                      </div>
+                        <div className="tech-icon" style={{ backgroundColor: "#61dafb" }}></div>
+                        <div className="tech-info">
+                          <span className="tech-name">Vite</span>
+                          <span className="tech-role">Tooling</span>
+                        </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="about-footer">
-                  <a
-                    href="https://github.com/eekilinc"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="about-github-link"
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-                    </svg>
-                    @eekilinc
-                  </a>
-                  <span className="about-footer-dot">·</span>
-                  <span>© 2026</span>
+                <div className="about-links" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'center' }}>
+                    <a href="https://github.com/eekilinc/ocr-capture" target="_blank" className="btn btn-secondary" style={{ borderRadius: '12px', width: '100%', maxWidth: '240px' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                        <span>{t("githubRepo")}</span>
+                    </a>
+                </div>
+
+                <div className="credits" style={{ marginTop: '1.5rem', opacity: 0.6, fontSize: '0.8rem' }}>
+                   Developed by Ekrem Kılınç
                 </div>
               </div>
             )}

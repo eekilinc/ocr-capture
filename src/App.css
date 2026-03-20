@@ -186,6 +186,64 @@ button {
 }
 
 /* --- Inputs & Selects --- */
+.modal-body {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-content {
+  flex: 1;
+  padding: 1.25rem;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.tech-grid-premium {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tech-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: transform 0.2s, background-color 0.2s;
+}
+
+.tech-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-2px);
+}
+
+.tech-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tech-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.tech-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tech-role {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
 .monitor-select {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--panel-border);
@@ -854,11 +912,11 @@ button {
 }
 
 .setting-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--modal-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .setting-item:last-child {
