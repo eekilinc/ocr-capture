@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
@@ -102,7 +104,16 @@ fn get_tessdata_dir(tesseract_bin: &PathBuf) -> Result<PathBuf, String> {
 }
 
 fn get_installed_languages(tesseract_bin: &PathBuf) -> HashSet<String> {
-    let output = Command::new(tesseract_bin).arg("--list-langs").output();
+    let mut cmd = Command::new(tesseract_bin);
+    cmd.arg("--list-langs");
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd.output();
     let Ok(out) = output else {
         return HashSet::new();
     };
@@ -242,14 +253,21 @@ pub fn run_ocr(input: OcrInput) -> Result<OcrResponse, String> {
     let lang = resolve_language_list(&requested_lang, &installed_langs);
 
     let output_prefix = base_path.to_str().ok_or("Gecersiz dosya yolu")?;
-    let output = Command::new(&tesseract_bin)
-        .arg(&png_path)
+    let mut cmd = Command::new(&tesseract_bin);
+    cmd.arg(&png_path)
         .arg(output_prefix)
         .arg("-l")
         .arg(&lang)
         .arg("txt")
-        .arg("tsv")
-        .output()
+        .arg("tsv");
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd.output()
         .map_err(|err| format!("Tesseract calistirilamadi: {err}"))?;
 
     let txt_path = base_path.with_extension("txt");
