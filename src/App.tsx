@@ -45,6 +45,7 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [lastCapturePath, setLastCapturePath] = useState<string | null>(null);
+  const [imgDisplaySize, setImgDisplaySize] = useState<{ w: number; h: number } | null>(null);
   const storeRef = useRef<Store | null>(null);
 
   // Initialize App Settings
@@ -142,8 +143,14 @@ export default function App() {
 
       if (rects.length > 0) {
         // Selection exists: crop in the browser (display coords → canvas → base64)
-        // This correctly maps CSS pixel selection to the actual image area
-        const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
+        // Pass display dims so letterbox offset/scale is correctly applied
+        const croppedBase64 = await cropImageToBase64(
+          captureImage, 
+          rects[0], 
+          undefined,
+          imgDisplaySize?.w,
+          imgDisplaySize?.h
+        );
         resp = await invoke<OcrResponse>("run_ocr", {
           input: {
             imageBase64: croppedBase64.split(",")[1],
@@ -363,6 +370,7 @@ export default function App() {
             imageSrc={captureImage}
             onSelectionComplete={setSelections}
             onImageSelect={handleImageSelect}
+            onImageSize={(w, h) => setImgDisplaySize({ w, h })}
             isSnippingMode={isSnippingMode}
             loading={ocrBusy}
           />

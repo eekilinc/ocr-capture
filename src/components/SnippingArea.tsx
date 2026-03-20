@@ -6,6 +6,7 @@ interface SnippingAreaProps {
   imageSrc: string | null;
   onSelectionComplete: (selections: Rect[]) => void;
   onImageSelect?: (path: string) => void;
+  onImageSize?: (width: number, height: number) => void;
   isSnippingMode: boolean;
   loading: boolean;
 }
@@ -14,6 +15,7 @@ export const SnippingArea = ({
   imageSrc,
   onSelectionComplete,
   onImageSelect,
+  onImageSize,
   isSnippingMode,
   loading,
 }: SnippingAreaProps) => {
@@ -170,7 +172,17 @@ export const SnippingArea = ({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      <img ref={imgRef} className="capture-image" src={imageSrc || ""} alt="capture" draggable={false} />
+      <img 
+        ref={imgRef} 
+        className="capture-image" 
+        src={imageSrc || ""} 
+        alt="capture" 
+        draggable={false}
+        onLoad={(e) => {
+          const el = e.currentTarget;
+          onImageSize?.(el.clientWidth, el.clientHeight);
+        }}
+      />
       
       {loading && (
         <div className="capture-loading-overlay">
