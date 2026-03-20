@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { enable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -11,7 +11,7 @@ import { ResultPanel } from "./components/ResultPanel";
 import { StatusToast } from "./components/StatusToast";
 import { SettingsModal } from "./components/SettingsModal";
 import { HistoryModal } from "./components/HistoryModal";
-import { cropImageToBase64 } from "./lib/image";
+import { cropImageToBase64, createThumbnail } from "./lib/image";
 import { scanQrCode } from "./lib/qr";
 import { useTheme } from "./hooks/useTheme";
 import type { CaptureResponse, OcrResponse, OcrWord, Rect, ToastState, MonitorInfo, HistoryItem, ImageFilters } from "./types";
@@ -27,8 +27,9 @@ function App() {
   const [ocrLanguages, setOcrLanguages] = useState("tur+eng");
 
   const [captureImage, setCaptureImage] = useState<string | null>(null);
+  const [captureImagePath, setCaptureImagePath] = useState<string | null>(null);
   const [captureSize, setCaptureSize] = useState({ width: 0, height: 0 });
-  const [selection, setSelection] = useState<Rect | null>(null);
+  const [selections, setSelections] = useState<Rect[]>([]);
   const [ocrText, setOcrText] = useState("");
   const [ocrEngine, setOcrEngine] = useState("");
   const [ocrWords, setOcrWords] = useState<OcrWord[]>([]);
@@ -305,9 +306,10 @@ function App() {
           monitorId: selectedMonitor,
         });
         
-        setCaptureImage(`data:image/png;base64,${payload.imageBase64}`);
+        setCaptureImagePath(payload.imagePath);
+        setCaptureImage(convertFileSrc(payload.imagePath));
         setCaptureSize({ width: payload.width, height: payload.height });
-        setSelection(null);
+        setSelections([]);
         setOcrText("");
         setOcrEngine("");
         setOcrWords([]);
@@ -360,14 +362,62 @@ function App() {
     
     // Kucuk bir bekleme, UI duzelsin
     setTimeout(() => {
+        setSelections([rect]);
         handleExtractText(rect);
     }, 100);
   };
 
-  const handleExtractText = async (overrideSelection?: Rect) => {
-    const target = overrideSelection ?? selection;
+  const handleBatchOcr = async (rects: Rect[]) => {
+    if ((!captureImage && !captureImagePath) || rects.length === 0) return;
+    setOcrBusy(true);
+    setCapturePhase('ocr');
+    let fullText = "";
+    
+    try {
+        for (const rect of rects) {
+            const croppedDataUrl = await cropImageToBase64(captureImage!, rect, filters);
+            const result = await invoke<OcrResponse>("run_ocr", {
+                input: {
+                    imagePath: captureImagePath,
+                    imageBase64: captureImagePath ? undefined : croppedDataUrl.split(",")[1],
+                    enhance: true,
+                    languages: ocrLanguages,
+                    crop: captureImagePath ? rect : undefined,
+                },
+            });
+            if (result.text.trim()) {
+                fullText += result.text.trim() + "\n\n";
+            }
+        }
+        
+        setOcrText(fullText.trim());
+        setOcrEngine("Tesseract (Batch)");
+        setOcrWords([]);
+        setLastError("");
+        
+        if (!fullText.trim()) {
+            showToast("error", "Seçilen alanlarda metin bulunamadı.");
+        } else {
+            showToast("success", `${rects.length} alan başarıyla okundu.`);
+            if (autoCopy) {
+                navigator.clipboard.writeText(fullText.trim()).catch(() => {});
+            }
+        }
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setLastError(msg);
+        showToast("error", `Batch OCR hatası: ${msg}`);
+    } finally {
+        setOcrBusy(false);
+        setCaptureBusy(false);
+        setCapturePhase('idle');
+    }
+  };
 
-    if (!captureImage || !target) {
+  const handleExtractText = async (overrideSelection?: Rect) => {
+    const target = overrideSelection ?? selections[0];
+
+    if ((!captureImage && !captureImagePath) || !target) {
       if (!overrideSelection) showToast("error", "Önce bir alan seçmelisiniz.");
       setCaptureBusy(false); 
       return;
@@ -377,18 +427,21 @@ function App() {
     setQrResult(null); // Reset QR on new scan
 
     try {
-      const croppedDataUrl = await cropImageToBase64(captureImage, target, filters);
+      const croppedDataUrl = await cropImageToBase64(captureImage!, target, filters);
       
       // Attempt QR Scan
       const qrRes = await scanQrCode(croppedDataUrl);
       if (qrRes) setQrResult(qrRes);
       // OCR icin sadece base64 kismi lazimsa split yapalim
-      const base64Data = croppedDataUrl.split(",")[1];
+      // const base64Data = croppedDataUrl.split(",")[1];
       
       const result = await invoke<OcrResponse>("run_ocr", {
         input: {
-          imageBase64: base64Data,
+          imagePath: captureImagePath,
+          imageBase64: captureImagePath ? undefined : croppedDataUrl.split(",")[1],
+          enhance: true,
           languages: ocrLanguages,
+          crop: captureImagePath ? target : undefined,
         },
       });
       setOcrText(result.text);
@@ -406,10 +459,11 @@ function App() {
           navigator.clipboard.writeText(result.text.trim()).catch(() => {});
       }
 
-      // Save to History
+      // Save to History (Using thumbnail to save RAM)
+      const thumbnail = await createThumbnail(croppedDataUrl || captureImage || "", 300);
       const newItem: HistoryItem = {
           id: Date.now().toString(),
-          imageBase64: croppedDataUrl, // Data URI formatinda sakla
+          imageBase64: thumbnail,
           text: result.text,
           date: new Date().toISOString()
       };
@@ -494,11 +548,12 @@ function App() {
 
   const handleClearWorkspace = () => {
     setCaptureImage(null);
+    setCaptureImagePath(null);
     setOcrText("");
     setOcrEngine("");
     setOcrWords([]);
     setLastError("");
-    setSelection(null);
+    setSelections([]);
   };
 
   // Panodan görüntü oku ve OCR'a gönder
@@ -544,41 +599,28 @@ function App() {
 
     // Görseli ekrana yükle (geçmiş için thumbnail)
     setCaptureImage(dataUrl);
+    setCaptureImagePath(null); // Dosya yuklendiginde eski capture yolunu sifirla
     setOcrText("");
     setOcrEngine("");
     setLastError("");
 
     try {
-      // Görüntü zaten hazır — sadece 2.5x büyütme + grayscale uygula
+      // Görüntü boyutlarını alalım
       const img = new Image();
       await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; img.src = dataUrl; });
-      
-      // Metadata set to state
       setCaptureSize({ width: img.naturalWidth, height: img.naturalHeight });
-      const scaleFactor = 2.5;
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.floor(img.naturalWidth * scaleFactor);
-      canvas.height = Math.floor(img.naturalHeight * scaleFactor);
-      const ctx = canvas.getContext("2d")!;
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.filter = "grayscale(100%)";
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const processedBase64 = canvas.toDataURL("image/png");
-      
-      // Attempt QR Scan
-      const qrRes = await scanQrCode(processedBase64);
+
+      const qrRes = await scanQrCode(dataUrl);
       if (qrRes) setQrResult(qrRes);
 
-      const base64Only = processedBase64.split(",")[1];
-      // Note: handleImageOcr currently does its own scaling/grayscale. 
-      // To keep it simple, I'll update it to use cropImageToBase64 for the full image if filters are active.
-      // But for now, I'll just apply the same logic as handleExtractText for consistency.
+      const base64Only = dataUrl.split(",")[1];
       
       const result = await invoke<OcrResponse>("run_ocr", {
-        input: { imageBase64: base64Only, languages: ocrLanguages },
+        input: { 
+          imageBase64: base64Only, 
+          enhance: true,
+          languages: ocrLanguages 
+        },
       });
 
       setOcrText(result.text);
@@ -595,9 +637,11 @@ function App() {
           navigator.clipboard.writeText(result.text.trim()).catch(() => {});
       }
 
+      // Save to History (Using thumbnail to save RAM)
+      const thumbnail = await createThumbnail(dataUrl, 300);
       const newItem: HistoryItem = {
         id: Date.now().toString(),
-        imageBase64: dataUrl,
+        imageBase64: thumbnail,
         text: result.text,
         date: new Date().toISOString(),
       };
@@ -662,9 +706,14 @@ function App() {
                         </div>
                       </div>
                     )}
-                    {selection && capturePhase === 'idle' && (
+                    {selections.length === 1 && capturePhase === 'idle' && (
                       <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                        {Math.round(selection.width)} x {Math.round(selection.height)} px
+                        {Math.round(selections[0].width)} x {Math.round(selections[0].height)} px
+                      </span>
+                    )}
+                    {selections.length > 1 && capturePhase === 'idle' && (
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                        {selections.length} Alan Seçildi
                       </span>
                     )}
                   </div>
@@ -675,11 +724,12 @@ function App() {
                <CaptureCanvas
                  imageSrc={captureImage}
                  naturalSize={captureSize}
-                 selection={selection}
-                 onSelectionChange={setSelection}
-                 loading={captureBusy && !captureImage}
+                 selections={selections}
+                 onSelectionsChange={setSelections}
+                 loading={ocrBusy}
                  isSnippingMode={isSnippingMode}
                  onSelectionComplete={handleSelectionComplete}
+                  onBatchOcr={handleBatchOcr}
                  currentShortcut={currentShortcut}
                  onFileOcr={handleImageOcr}
                  filters={filters}
@@ -697,7 +747,7 @@ function App() {
                 error={lastError}
                 words={ocrWords}
                 captureImage={captureImage}
-                selection={selection}
+                selections={selections}
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                 qrResult={qrResult}

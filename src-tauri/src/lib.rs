@@ -1,4 +1,5 @@
 mod commands;
+mod utils;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -15,6 +16,7 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let quit_i = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Göster", true, None::<&str>)?;
@@ -56,7 +58,8 @@ pub fn run() {
             commands::capture::capture_screen,
             commands::capture::get_monitors,
             commands::ocr::run_ocr,
-            commands::ocr::list_ocr_languages
+            commands::ocr::list_ocr_languages,
+            commands::ocr::download_ocr_language
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

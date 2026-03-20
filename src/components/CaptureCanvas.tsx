@@ -4,11 +4,12 @@ import type { Rect, ImageFilters } from "../types";
 type CaptureCanvasProps = {
   imageSrc: string | null;
   naturalSize: { width: number; height: number }; 
-  selection: Rect | null;
-  onSelectionChange: (rect: Rect | null) => void;
+  selections: Rect[];
+  onSelectionsChange: (rects: Rect[]) => void;
   loading: boolean;
   isSnippingMode?: boolean;
   onSelectionComplete?: (rect: Rect) => void;
+  onBatchOcr?: (rects: Rect[]) => void;
   currentShortcut?: string;
   onFileOcr?: (dataUrl: string) => void;
   filters: ImageFilters;
@@ -18,10 +19,11 @@ type CaptureCanvasProps = {
 // Wrapper to adapt old props to new SnippingArea
 export const CaptureCanvas = ({ 
     imageSrc, 
-    selection, 
-    onSelectionChange,
+    selections, 
+    onSelectionsChange,
     isSnippingMode,
     onSelectionComplete,
+    onBatchOcr,
     currentShortcut,
     onFileOcr,
     filters,
@@ -31,10 +33,11 @@ export const CaptureCanvas = ({
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
         <SnippingArea 
             imageSrc={imageSrc} 
-            selection={selection} 
-            onSelectionChange={onSelectionChange}
+            selections={selections} 
+            onSelectionsChange={onSelectionsChange}
             isSnippingMode={isSnippingMode}
             onSelectionComplete={onSelectionComplete}
+            onBatchOcr={onBatchOcr}
             currentShortcut={currentShortcut}
             onFileOcr={onFileOcr}
         />

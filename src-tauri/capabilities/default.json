@@ -16,6 +16,19 @@
     "core:window:allow-set-size",
     "core:window:allow-outer-size",
     "core:window:allow-outer-position",
-    "store:default"
+    "store:default",
+    "fs:default",
+    "fs:allow-temp-read-recursive",
+    "fs:allow-temp-write-recursive",
+    "fs:scope-temp-recursive",
+    "core:path:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:webview:default",
+    "core:webview:allow-webview-show",
+    "core:webview:allow-webview-hide",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size"
   ]
 }

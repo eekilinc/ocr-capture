@@ -6,6 +6,7 @@ import jsQR from "jsqr";
 export async function scanQrCode(base64: string): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.width;

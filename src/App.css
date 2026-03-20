@@ -447,6 +447,21 @@ button {
   border: 1px solid rgba(255,255,255,0.2);
 }
 
+.magnifier-container {
+  position: absolute;
+  pointer-events: none;
+  z-index: 3000;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid #fff;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+
+.magnifier-container canvas {
+  display: block;
+}
+
 /* --- Floating Selection Toolbar --- */
 .floating-selection-toolbar {
   position: absolute;

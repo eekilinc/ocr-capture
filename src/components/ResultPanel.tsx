@@ -11,7 +11,7 @@ type ResultPanelProps = {
   error: string;
   words: OcrWord[];
   captureImage: string | null;
-  selection: Rect | null;
+  selections: Rect[];
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   qrResult: string | null;
@@ -44,7 +44,7 @@ export const ResultPanel = ({
   error,
   words,
   captureImage,
-  selection,
+  selections,
   isCollapsed,
   onToggleCollapse,
   qrResult,
@@ -96,8 +96,9 @@ export const ResultPanel = ({
   };
 
   const SCALE = 2.5;
-  const origW = selection ? selection.width : 0;
-  const origH = selection ? selection.height : 0;
+  const currentRect = selections[selections.length - 1];
+  const origW = currentRect ? currentRect.width : 0;
+  const origH = currentRect ? currentRect.height : 0;
   const hasWords = words.length > 0;
 
   const renderContent = () => {

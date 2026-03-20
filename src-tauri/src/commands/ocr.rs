@@ -1,18 +1,28 @@
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
+use image::GenericImageView;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-use which::which;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+
+#[derive(Debug, Deserialize)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrInput {
-    pub image_base64: String,
+    pub image_base64: Option<String>,
+    pub image_path: Option<String>,
     pub languages: Option<String>,
+    pub enhance: Option<bool>,
+    pub crop: Option<Rect>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -34,17 +44,14 @@ pub struct OcrResponse {
 }
 
 fn resolve_tesseract_binary() -> Result<PathBuf, String> {
-    println!("DEBUG: Tesseract binary aranıyor...");
     if let Ok(path) = std::env::var("TESSERACT_PATH") {
         let explicit = PathBuf::from(path);
         if explicit.exists() {
-            println!("DEBUG: TESSERACT_PATH bulundu: {:?}", explicit);
             return Ok(explicit);
         }
     }
 
-    if let Ok(path) = which("tesseract") {
-        println!("DEBUG: PATH icinde tesseract bulundu: {:?}", path);
+    if let Ok(path) = which::which("tesseract") {
         return Ok(path);
     }
 
@@ -59,28 +66,39 @@ fn resolve_tesseract_binary() -> Result<PathBuf, String> {
         if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
             candidates.push(PathBuf::from(program_files_x86).join("Tesseract-OCR/tesseract.exe"));
         }
-        // Common install location hardcoded just in case env vars are weird
-        candidates.push(PathBuf::from(
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        ));
-        candidates.push(PathBuf::from(
-            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-        ));
+        candidates.push(PathBuf::from(r"C:\Program Files\Tesseract-OCR\tesseract.exe"));
+        candidates.push(PathBuf::from(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"));
 
         for candidate in candidates {
             if candidate.exists() {
-                println!(
-                    "DEBUG: Windows konumunda tesseract bulundu: {:?}",
-                    candidate
-                );
                 return Ok(candidate);
             }
         }
     }
 
-    Err(String::from(
-        "Tesseract bulunamadi. Lutfen Tesseract-OCR yukleyin ve PATH'e ekleyin veya TESSERACT_PATH ortam degiskenini ayarlayin.",
-    ))
+    Err(String::from("Tesseract bulunamadi."))
+}
+
+fn get_tessdata_dir(tesseract_bin: &PathBuf) -> Result<PathBuf, String> {
+    // 1. TESSDATA_PREFIX env var
+    if let Ok(prefix) = std::env::var("TESSDATA_PREFIX") {
+        let pb = PathBuf::from(prefix);
+        if pb.exists() { return Ok(pb); }
+    }
+
+    // 2. Relative to binary
+    if let Some(parent) = tesseract_bin.parent() {
+        let tessdata = parent.join("tessdata");
+        if tessdata.exists() { return Ok(tessdata); }
+    }
+
+    // 3. Common linux paths if not windows
+    if !cfg!(target_os = "windows") {
+        let common = PathBuf::from("/usr/share/tesseract-ocr/5/tessdata");
+        if common.exists() { return Ok(common); }
+    }
+
+    Err(String::from("tessdata klasoru bulunamadi."))
 }
 
 fn get_installed_languages(tesseract_bin: &PathBuf) -> HashSet<String> {
@@ -118,44 +136,48 @@ fn resolve_language_list(requested: &str, installed: &HashSet<String>) -> String
     requested.to_string()
 }
 
-fn temp_png_path() -> Result<PathBuf, String> {
-    let since_epoch = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| format!("Saat bilgisi okunamadi: {err}"))?
-        .as_millis();
-
-    let mut path = std::env::temp_dir();
-    path.push(format!("ocr-capture-{since_epoch}.png"));
-    Ok(path)
-}
-
 #[tauri::command]
 pub fn list_ocr_languages() -> Result<Vec<String>, String> {
     let tesseract_bin = resolve_tesseract_binary()?;
     let mut langs: Vec<String> = get_installed_languages(&tesseract_bin)
         .into_iter()
-        .filter(|l| l != "osd" && l != "equ") // internal tesseract models, not real languages
+        .filter(|l| l != "osd" && l != "equ")
         .collect();
     langs.sort();
     Ok(langs)
 }
 
+#[tauri::command]
+pub async fn download_ocr_language(lang: String) -> Result<String, String> {
+    let tesseract_bin = resolve_tesseract_binary()?;
+    let tessdata_dir = get_tessdata_dir(&tesseract_bin)?;
+    
+    let url = format!("https://github.com/tesseract-ocr/tessdata_fast/raw/main/{}.traineddata", lang);
+    let dest_path = tessdata_dir.join(format!("{}.traineddata", lang));
+
+    println!("DEBUG: Dil indiriliyor: {} -> {:?}", url, dest_path);
+
+    let response = reqwest::get(url).await.map_err(|e| format!("Baglanti hatasi: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Dil paketi indirilemedi: {}", response.status()));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| format!("Veri okunamadi: {e}"))?;
+    fs::write(&dest_path, bytes).map_err(|e| format!("Dosya yazılamadı: {e}"))?;
+
+    Ok(format!("{} dili basariyla yuklendi.", lang))
+}
+
 fn parse_tsv_words(tsv: &str) -> Vec<OcrWord> {
     tsv.lines()
-        .skip(1) // header satırını atla
+        .skip(1)
         .filter_map(|line| {
             let cols: Vec<&str> = line.split('\t').collect();
-            if cols.len() < 12 {
-                return None;
-            }
+            if cols.len() < 12 { return None; }
             let level: i32 = cols[0].parse().ok()?;
-            if level != 5 {
-                return None; // 5 = word level
-            }
+            if level != 5 { return None; }
             let text = cols[11].trim().to_string();
-            if text.is_empty() {
-                return None;
-            }
+            if text.is_empty() { return None; }
             Some(OcrWord {
                 text,
                 x: cols[6].parse().ok()?,
@@ -171,77 +193,112 @@ fn parse_tsv_words(tsv: &str) -> Vec<OcrWord> {
 #[tauri::command]
 pub fn run_ocr(input: OcrInput) -> Result<OcrResponse, String> {
     let tesseract_bin = resolve_tesseract_binary()?;
-    let png_path = temp_png_path()?;
-    let image_bytes = STANDARD
-        .decode(input.image_base64)
-        .map_err(|err| format!("Base64 veri cozulmedi: {err}"))?;
+    let base_path = crate::utils::temp_file_path("")?; // No extension for prefix
+    let png_path = base_path.with_extension("png");
 
-    fs::write(&png_path, image_bytes).map_err(|err| format!("Gecici dosya yazilamadi: {err}"))?;
+    let mut img = if let Some(path_str) = input.image_path {
+        image::open(path_str).map_err(|err| format!("Resim dosyası acılamadı: {err}"))?
+    } else if let Some(base64_str) = input.image_base64 {
+        let bytes = STANDARD.decode(base64_str).map_err(|err| format!("Base64 hatasi: {err}"))?;
+        image::load_from_memory(&bytes).map_err(|err| format!("Resim yuklenemedi: {err}"))?
+    } else {
+        return Err(String::from("Resim verisi bulunamadi."));
+    };
+
+    // --- KIRPMA (CROPPING) ---
+    if let Some(crop) = input.crop {
+        let x = crop.x.max(0.0) as u32;
+        let y = crop.y.max(0.0) as u32;
+        let w = (crop.width as u32).min(img.width().saturating_sub(x));
+        let h = (crop.height as u32).min(img.height().saturating_sub(y));
+        if w > 0 && h > 0 {
+            img = img.crop_imm(x, y, w, h);
+        }
+    }
+
+    // --- KALITE IYILESTIRMER ---
+    if input.enhance.unwrap_or(true) {
+        // Grayscale ve Kontrat artirimi (Tesseract icin en iyi sonucu verir)
+        img = img.grayscale();
+        img = img.adjust_contrast(20.0); // Kontrasti %20 artir
+    }
+
+    // Boyutlandirma (OCR kalitesi icin ideal boyut 2000-2500px civaridir)
+    let (width, height) = img.dimensions();
+    const MAX_DIM: u32 = 2500;
+    const MIN_DIM: u32 = 1000;
+    
+    if width > MAX_DIM || height > MAX_DIM {
+        img = img.resize(MAX_DIM, MAX_DIM, image::imageops::FilterType::Lanczos3);
+    } else if width < MIN_DIM && height < MIN_DIM {
+        // Cok kucuk secimleri buyutmek OCR kalitesini artirir (Min 1000px civari idealdir)
+        img = img.resize(width * 2, height * 2, image::imageops::FilterType::Lanczos3);
+    }
+
+    img.save(&png_path).map_err(|err| format!("Gecici dosya yazilamadi: {err}"))?;
 
     let requested_lang = input.languages.unwrap_or_else(|| String::from("tur+eng"));
     let installed_langs = get_installed_languages(&tesseract_bin);
     let lang = resolve_language_list(&requested_lang, &installed_langs);
 
-    // KULLANICIYA UYARI: Eger Turkce istendi ama yoksa
-    if requested_lang.contains("tur") && !installed_langs.contains("tur") {
-        println!("UYARI: Turkce dil paketi (tur.traineddata) Tesseract klasorunde bulunamadi.");
-        println!(
-            "Lutfen su adresten 'tur.traineddata' dosyasini indirip 'tessdata' klasorune atin:"
-        );
-        println!("https://github.com/tesseract-ocr/tessdata");
-    }
-
+    let output_prefix = base_path.to_str().ok_or("Gecersiz dosya yolu")?;
     let output = Command::new(&tesseract_bin)
         .arg(&png_path)
-        .arg("stdout")
+        .arg(output_prefix)
         .arg("-l")
         .arg(&lang)
-        .output()
-        .map_err(|err| {
-            format!(
-                "Tesseract calistirilamadi: {err}. TESSERACT_PATH veya PATH ayarlarini kontrol et."
-            )
-        })?;
-
-    // TSV pass for word bounding boxes
-    let tsv_result = Command::new(&tesseract_bin)
-        .arg(&png_path)
-        .arg("stdout")
-        .arg("-l")
-        .arg(&lang)
+        .arg("txt")
         .arg("tsv")
-        .output();
+        .output()
+        .map_err(|err| format!("Tesseract calistirilamadi: {err}"))?;
 
-    let _ = fs::remove_file(&png_path);
+    let txt_path = base_path.with_extension("txt");
+    let tsv_path = base_path.with_extension("tsv");
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        println!("OCR HATA: {}", stderr);
-        return Err(if stderr.is_empty() {
-            String::from("OCR islemi basarisiz oldu. (Cikis kodu hatali)")
-        } else {
-            format!("OCR islemi basarisiz oldu: {stderr}")
-        });
+        let _ = fs::remove_file(&png_path);
+        let _ = fs::remove_file(&txt_path);
+        let _ = fs::remove_file(&tsv_path);
+        return Err(format!("OCR islemi basarisiz oldu: {stderr}"));
     }
 
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if text.is_empty() {
-        println!("UYARI: OCR metin bulamadi.");
-    } else {
-        println!("OCR BASARILI: {} karakter okundu.", text.len());
-    }
+    let mut text = fs::read_to_string(&txt_path).unwrap_or_default().trim().to_string();
+    let tsv_text = fs::read_to_string(&tsv_path).unwrap_or_default();
 
-    let words = match tsv_result {
-        Ok(tsv_output) if tsv_output.status.success() => {
-            let tsv_text = String::from_utf8_lossy(&tsv_output.stdout).to_string();
-            parse_tsv_words(&tsv_text)
+    // --- AKILLI PARAGRAF BIRLEŞTIRME (Smart Rejoining) ---
+    // Eger bir satir nokta, soru isareti veya ünlemle bitmiyorsa ve altinda satir varsa birlestir.
+    if !text.is_empty() {
+        let mut joined = String::new();
+        let lines: Vec<&str> = text.lines().collect();
+        for i in 0..lines.len() {
+            let current = lines[i].trim();
+            if current.is_empty() { continue; }
+            
+            joined.push_str(current);
+            
+            if i < lines.len() - 1 {
+                let last_char = current.chars().last().unwrap_or(' ');
+                // Paragraf sonu belirtileri degilse bosluk ekle ve bir sonraki satira gec
+                if !['.', ':', '!', '?'].contains(&last_char) && current.len() > 10 {
+                    joined.push(' ');
+                } else {
+                    joined.push('\n');
+                }
+            }
         }
-        _ => vec![],
-    };
+        text = joined.trim().to_string();
+    }
+
+    let _ = fs::remove_file(&png_path);
+    let _ = fs::remove_file(&txt_path);
+    let _ = fs::remove_file(&tsv_path);
 
     Ok(OcrResponse {
         text,
-        engine: format!("{} ({lang})", tesseract_bin.display()),
-        words,
+        engine: format!("Tesseract ({lang})"),
+        words: parse_tsv_words(&tsv_text),
     })
 }
+
+

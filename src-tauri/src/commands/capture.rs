@@ -1,8 +1,4 @@
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use image::codecs::png::PngEncoder;
-use image::ColorType;
-use image::{imageops, ImageBuffer, ImageEncoder, RgbaImage};
+use image::{imageops, ImageBuffer, RgbaImage};
 use screenshots::Screen;
 use serde::Serialize;
 use std::cmp;
@@ -10,7 +6,7 @@ use std::cmp;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureResponse {
-    pub image_base64: String,
+    pub image_path: String,
     pub width: u32,
     pub height: u32,
     pub platform_note: String,
@@ -57,12 +53,11 @@ pub fn capture_screen(monitor_id: Option<u32>) -> Result<CaptureResponse, String
         return Err(String::from("Hicbir ekran algilanmadi."));
     }
 
-    // Fix missing scope due to early return
-    // Need to add back the logic for single monitor
+    let final_image: RgbaImage;
+    let platform_note: String;
 
-    // Eger spesifik bir monitor istenmisse onu yakala ve don
+    // Eger spesifik bir monitor istenmisse onu yakala
     if let Some(id) = monitor_id {
-        // screens zaten yukarida tanimli
         if let Some(screen) = screens.get(id as usize) {
             let captured_image = screen
                 .capture()
@@ -70,99 +65,58 @@ pub fn capture_screen(monitor_id: Option<u32>) -> Result<CaptureResponse, String
 
             let width = captured_image.width();
             let height = captured_image.height();
-
-            // Raw data'yi al
             let raw_pixels = captured_image.into_raw();
 
-            // ImageBuffer olustur
-            if let Some(img_buffer) = RgbaImage::from_raw(width, height, raw_pixels) {
-                let mut bytes = Vec::new();
-                PngEncoder::new(&mut bytes)
-                    .write_image(&img_buffer, width, height, ColorType::Rgba8.into())
-                    .map_err(|err| format!("Goruntu PNG'ye cevrilemedi: {err}"))?;
-
-                return Ok(CaptureResponse {
-                    image_base64: STANDARD.encode(bytes),
-                    width,
-                    height,
-                    platform_note: format!("Monitor {} yakalandi.", id + 1),
-                });
-            } else {
-                return Err(String::from(
-                    "Goruntu verisi islenemedi (Buffer olusturma hatasi).",
-                ));
-            }
+            final_image = RgbaImage::from_raw(width, height, raw_pixels)
+                .ok_or_else(|| String::from("Goruntu verisi islenemedi (Buffer olusturma hatasi)."))?;
+            
+            platform_note = format!("Monitor {} yakalandi.", id + 1);
         } else {
             return Err(format!("Monitor ID {} bulunamadi.", id));
         }
-    }
-
-    // Monitor ID belirtilmemisse TUM EKRANLARI BIRLESTIR
-    let screen_count = screens.len();
-
-    let mut min_x = i32::MAX;
-    let mut min_y = i32::MAX;
-    let mut max_x = i32::MIN;
-    let mut max_y = i32::MIN;
-
-    for screen in &screens {
-        min_x = cmp::min(min_x, screen.display_info.x);
-        min_y = cmp::min(min_y, screen.display_info.y);
-        max_x = cmp::max(
-            max_x,
-            screen.display_info.x + screen.display_info.width as i32,
-        );
-        max_y = cmp::max(
-            max_y,
-            screen.display_info.y + screen.display_info.height as i32,
-        );
-    }
-
-    let total_width = (max_x - min_x) as u32;
-    let total_height = (max_y - min_y) as u32;
-
-    let mut combined_image: RgbaImage = ImageBuffer::new(total_width, total_height);
-
-    for screen in screens {
-        let captured_image = screen
-            .capture()
-            .map_err(|err| format!("Ekran {} yakalanamadi: {}", screen.display_info.id, err))?;
-
-        let width = captured_image.width();
-        let height = captured_image.height();
-        let raw_pixels = captured_image.into_raw();
-
-        if let Some(img_buffer) = RgbaImage::from_raw(width, height, raw_pixels) {
-            let relative_x = (screen.display_info.x - min_x) as i64;
-            let relative_y = (screen.display_info.y - min_y) as i64;
-
-            imageops::overlay(&mut combined_image, &img_buffer, relative_x, relative_y);
-        }
-    }
-
-    let mut bytes = Vec::new();
-    PngEncoder::new(&mut bytes)
-        .write_image(
-            &combined_image,
-            total_width,
-            total_height,
-            ColorType::Rgba8.into(),
-        )
-        .map_err(|err| format!("Birlestirilmis goruntu PNG'ye cevrilemedi: {err}"))?;
-
-    let platform_note = if screen_count > 1 {
-        format!(
-            "{} ekran birlestirildi. Genis tuval uzerinde secim yapabilirsiniz.",
-            screen_count
-        )
     } else {
-        String::new()
-    };
+        // Monitor ID belirtilmemisse TUM EKRANLARI BIRLESTIR
+        let mut min_x = i32::MAX;
+        let mut min_y = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut max_y = i32::MIN;
+
+        for screen in &screens {
+            min_x = cmp::min(min_x, screen.display_info.x);
+            min_y = cmp::min(min_y, screen.display_info.y);
+            max_x = cmp::max(max_x, screen.display_info.x + screen.display_info.width as i32);
+            max_y = cmp::max(max_y, screen.display_info.y + screen.display_info.height as i32);
+        }
+
+        let total_width = (max_x - min_x) as u32;
+        let total_height = (max_y - min_y) as u32;
+        let mut combined = ImageBuffer::new(total_width, total_height);
+
+        for screen in screens {
+            if let Ok(captured) = screen.capture() {
+                let w = captured.width();
+                let h = captured.height();
+                let pixels = captured.into_raw();
+                if let Some(buf) = RgbaImage::from_raw(w, h, pixels) {
+                    let rx = (screen.display_info.x - min_x) as i64;
+                    let ry = (screen.display_info.y - min_y) as i64;
+                    imageops::overlay(&mut combined, &buf, rx, ry);
+                }
+            }
+        }
+        final_image = combined;
+        platform_note = String::from("Tum ekranlar birlestirildi.");
+    }
+
+    let path = crate::utils::temp_file_path("png")?;
+    final_image.save(&path)
+        .map_err(|err| format!("Goruntu kaydedilemedi: {err}"))?;
 
     Ok(CaptureResponse {
-        image_base64: STANDARD.encode(bytes),
-        width: total_width,
-        height: total_height,
+        image_path: path.to_string_lossy().to_string(),
+        width: final_image.width(),
+        height: final_image.height(),
         platform_note,
     })
 }
+

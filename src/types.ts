@@ -8,7 +8,7 @@ export type Rect = {
 };
 
 export type CaptureResponse = {
-  imageBase64: string;
+  imagePath: string;
   width: number;
   height: number;
   platformNote: string;

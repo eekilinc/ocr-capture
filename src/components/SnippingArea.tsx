@@ -3,13 +3,17 @@ import type { Rect } from "../types";
 
 type SnippingAreaProps = {
   imageSrc: string | null;
-  selection: Rect | null;
-  onSelectionChange: (rect: Rect | null) => void;
+  selections: Rect[];
+  onSelectionsChange: (rects: Rect[]) => void;
   onSelectionComplete?: (rect: Rect) => void;
+  onBatchOcr?: (rects: Rect[]) => void;
   isSnippingMode?: boolean;
   currentShortcut?: string;
   onFileOcr?: (dataUrl: string) => void;
 };
+
+const MAGNIFIER_SIZE = 120;
+const ZOOM_LEVEL = 2.5;
 
 // "Control+Shift+F9" → ["Ctrl", "Shift", "F9"]
 function shortcutToKeys(shortcut: string): string[] {
@@ -33,23 +37,69 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export const SnippingArea = ({
   imageSrc,
-  selection,
-  onSelectionChange,
+  selections,
+  onSelectionsChange,
   onSelectionComplete,
+  onBatchOcr,
   isSnippingMode = false,
   currentShortcut = "Control+Shift+F9",
   onFileOcr,
 }: SnippingAreaProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const updateMagnifier = (pos: { x: number, y: number }) => {
+    if (!isSnippingMode || !imageSrc || !magnifierCanvasRef.current) return;
+    
+    const canvas = magnifierCanvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const img = containerRef.current?.querySelector("img");
+    if (!ctx || !img || !img.naturalWidth) return;
+
+    const { renderW, renderH, offsetX, offsetY } = getImageRenderRect(img);
+    
+    // Resim uzerindeki koordinati bul
+    const imgX = pos.x - offsetX;
+    const imgY = pos.y - offsetY;
+    
+    const naturalX = (imgX / renderW) * img.naturalWidth;
+    const naturalY = (imgY / renderH) * img.naturalHeight;
+
+    ctx.imageSmoothingEnabled = false; // Piksel piksel gorunsun diye
+    ctx.clearRect(0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE);
+    
+    const sourceSize = MAGNIFIER_SIZE / ZOOM_LEVEL;
+    
+    ctx.drawImage(
+      img,
+      naturalX - sourceSize / 2,
+      naturalY - sourceSize / 2,
+      sourceSize,
+      sourceSize,
+      0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE
+    );
+
+    // Crosshair
+    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(MAGNIFIER_SIZE/2, 0); ctx.lineTo(MAGNIFIER_SIZE/2, MAGNIFIER_SIZE);
+    ctx.moveTo(0, MAGNIFIER_SIZE/2); ctx.lineTo(MAGNIFIER_SIZE, MAGNIFIER_SIZE/2);
+    ctx.stroke();
+    
+    // Border
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.strokeRect(0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE);
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Reset selection when image changes
+  // Reset selections when image changes
   useEffect(() => {
-    onSelectionChange(null);
+    onSelectionsChange([]);
   }, [imageSrc]);
 
   const handleFileDrop = useCallback(async (file: File) => {
@@ -212,16 +262,21 @@ export const SnippingArea = ({
     setStartPos(pos);
     setCurrentPos(pos);
     setIsDragging(true);
-    onSelectionChange(null);
+    
+    // Shift basılı değilse mevcut seçimleri temizle
+    if (!e.shiftKey) {
+        onSelectionsChange([]);
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
     const pos = getRelativePos(e);
     setCurrentPos(pos);
+    updateMagnifier(pos);
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
     if (!isDragging) return;
     setIsDragging(false);
 
@@ -230,23 +285,18 @@ export const SnippingArea = ({
     const width = Math.abs(currentPos.x - startPos.x);
     const height = Math.abs(currentPos.y - startPos.y);
 
-    if (width > 5 && height > 5) {
+    if (width > 5 && height > 0) {
       const img = containerRef.current?.querySelector("img");
       if (img) {
         const { renderW, renderH, offsetX, offsetY } = getImageRenderRect(img);
-
-        // Mouse koordinatları container'a göre — görüntünün render alanına göre ayarla
         const imgX = x - offsetX;
         const imgY = y - offsetY;
-
-        // Görüntü sınırlarının dışına çıkmasını engelle
         const clampedX = Math.max(0, imgX);
         const clampedY = Math.max(0, imgY);
         const clampedW = Math.min(imgX + width, renderW) - clampedX;
         const clampedH = Math.min(imgY + height, renderH) - clampedY;
 
         if (clampedW > 5 && clampedH > 5) {
-          // Render koordinatlarından doğal piksel koordinatlarına çevir
           const scaleX = img.naturalWidth / renderW;
           const scaleY = img.naturalHeight / renderH;
 
@@ -257,9 +307,11 @@ export const SnippingArea = ({
             height: clampedH * scaleY,
           };
 
-          onSelectionChange(finalRect);
+          const newSelections = e.shiftKey ? [...selections, finalRect] : [finalRect];
+          onSelectionsChange(newSelections);
 
-          if (isSnippingMode && onSelectionComplete) {
+          // Snipping modunda tek seçim yeterli (varsayılan davranış)
+          if (isSnippingMode && onSelectionComplete && !e.shiftKey) {
             onSelectionComplete(finalRect);
           }
         }
@@ -267,36 +319,43 @@ export const SnippingArea = ({
     }
   };
 
-  const renderSelection = () => {
-    if (isDragging) {
-      const x = Math.min(startPos.x, currentPos.x);
-      const y = Math.min(startPos.y, currentPos.y);
-      const width = Math.abs(currentPos.x - startPos.x);
-      const height = Math.abs(currentPos.y - startPos.y);
-      return <div className="selection-box" style={{ left: x, top: y, width, height }} />;
-    }
+  const renderSelections = () => {
+    const img = containerRef.current?.querySelector("img");
+    if (!img) return null;
 
-    if (selection && containerRef.current) {
-      const img = containerRef.current.querySelector("img");
-      if (!img) return null;
+    const { renderW, renderH, offsetX, offsetY } = getImageRenderRect(img);
+    const scaleX = renderW / img.naturalWidth;
+    const scaleY = renderH / img.naturalHeight;
 
-      const { renderW, renderH, offsetX, offsetY } = getImageRenderRect(img);
-      const scaleX = renderW / img.naturalWidth;
-      const scaleY = renderH / img.naturalHeight;
-
-      return (
-        <div
-          className="selection-box"
-          style={{
-            left: selection.x * scaleX + offsetX,
-            top: selection.y * scaleY + offsetY,
-            width: selection.width * scaleX,
-            height: selection.height * scaleY,
-          }}
+    const draggingBox = isDragging && (
+        <div 
+          className="selection-box dragging" 
+          style={{ 
+            left: Math.min(startPos.x, currentPos.x), 
+            top: Math.min(startPos.y, currentPos.y), 
+            width: Math.abs(currentPos.x - startPos.x), 
+            height: Math.abs(currentPos.y - startPos.y) 
+          }} 
         />
-      );
-    }
-    return null;
+    );
+
+    return (
+        <>
+          {selections.map((rect, i) => (
+              <div 
+                key={i}
+                className="selection-box"
+                style={{
+                    left: rect.x * scaleX + offsetX,
+                    top: rect.y * scaleY + offsetY,
+                    width: rect.width * scaleX,
+                    height: rect.height * scaleY
+                }}
+              />
+          ))}
+          {draggingBox}
+        </>
+    );
   };
   
   const renderResolutionHint = () => {
@@ -319,7 +378,7 @@ export const SnippingArea = ({
   };
 
   const renderFloatingToolbar = () => {
-    if (isDragging || !selection || isSnippingMode) return null;
+    if (isDragging || selections.length === 0 || isSnippingMode) return null;
 
     const img = containerRef.current?.querySelector("img");
     if (!img) return null;
@@ -328,12 +387,13 @@ export const SnippingArea = ({
     const scaleX = renderW / img.naturalWidth;
     const scaleY = renderH / img.naturalHeight;
 
-    const top = selection.y * scaleY + offsetY;
-    const left = selection.x * scaleX + offsetX;
-    const width = selection.width * scaleX;
-    const height = selection.height * scaleY;
+    // En son eklenen kutunun üzerine toolbar koyalım
+    const lastRect = selections[selections.length - 1];
+    const top = lastRect.y * scaleY + offsetY;
+    const left = lastRect.x * scaleX + offsetX;
+    const width = lastRect.width * scaleX;
+    const height = lastRect.height * scaleY;
 
-    // Toolbar position logic (prefer below, then above)
     let toolbarTop = top + height + 8;
     if (toolbarTop + 40 > renderH + offsetY) {
         toolbarTop = top - 45;
@@ -347,14 +407,21 @@ export const SnippingArea = ({
           left: left + width / 2,
           transform: 'translateX(-50%)' 
         }}
-        onMouseDown={e => e.stopPropagation()} // Prevent deselection
+        onMouseDown={e => e.stopPropagation()} 
       >
-        <button className="toolbar-btn" onClick={() => onSelectionComplete?.(selection)} title="Metni Çıkar">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 11l5 5 5-5M12 4v12M21 21H3"/></svg>
-          Çıkar
-        </button>
+        {selections.length > 1 ? (
+             <button className="toolbar-btn primary" onClick={() => onBatchOcr?.(selections)}>
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 11l5 5 5-5M12 4v12M21 21H3"/></svg>
+               Hepsini Oku ({selections.length})
+             </button>
+        ) : (
+            <button className="toolbar-btn" onClick={() => onSelectionComplete?.(selections[0])}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 11l5 5 5-5M12 4v12M21 21H3"/></svg>
+              Çıkar
+            </button>
+        )}
         <div className="toolbar-divider"></div>
-        <button className="toolbar-btn" onClick={() => onSelectionChange(null)} title="Seçimi İptal Et">
+        <button className="toolbar-btn" onClick={() => onSelectionsChange([])} title="Tümünü Temizle">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -370,13 +437,34 @@ export const SnippingArea = ({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <img src={imageSrc} alt="Capture" className="capture-image" draggable={false} />
-      <div className="selection-overlay">{renderSelection()}</div>
+      <img src={imageSrc} alt="Capture" className="capture-image" draggable={false} crossOrigin="anonymous" />
+      <div className="selection-overlay">{renderSelections()}</div>
       {renderResolutionHint()}
       {renderFloatingToolbar()}
 
       {isSnippingMode && (
-        <div className="snipping-hint">Alan seçmek için sürükleyip bırakın (ESC iptal)</div>
+        <>
+            <div className="snipping-hint">
+                {selections.length > 0 ? "Shift + Sürükle ile daha fazla alan seçebilirsiniz" : "Alan seçmek için sürükleyip bırakın (ESC iptal)"}
+            </div>
+            {isDragging && (
+                <div 
+                    className="magnifier-container"
+                    style={{
+                        left: currentPos.x + 20,
+                        top: currentPos.y + 20,
+                        width: MAGNIFIER_SIZE,
+                        height: MAGNIFIER_SIZE
+                    }}
+                >
+                    <canvas 
+                        ref={magnifierCanvasRef}
+                        width={MAGNIFIER_SIZE}
+                        height={MAGNIFIER_SIZE}
+                    />
+                </div>
+            )}
+        </>
       )}
     </div>
   );
