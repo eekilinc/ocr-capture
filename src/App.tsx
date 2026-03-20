@@ -138,63 +138,61 @@ export default function App() {
     setOcrBusy(true);
     setLastError("");
     try {
-      const input: any = { languages: ocrLanguages };
-      
-      if (lastCapturePath) {
-        input.imagePath = lastCapturePath;
-      } else {
-        input.imageBase64 = captureImage.startsWith("data:") 
-          ? captureImage.split(",")[1] 
-          : captureImage; // Handle raw base64 if needed
-      }
+      let resp: OcrResponse;
 
       if (rects.length > 0) {
-        input.crop = rects[0];
+        // Selection exists: crop in the browser (display coords → canvas → base64)
+        // This correctly maps CSS pixel selection to the actual image area
+        const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
+        resp = await invoke<OcrResponse>("run_ocr", {
+          input: {
+            imageBase64: croppedBase64.split(",")[1],
+            languages: ocrLanguages,
+          }
+        });
+
+        const qr = await scanQrCode(croppedBase64);
+        setQrResult(qr);
+
+        const newItem: HistoryItem = {
+          id: crypto.randomUUID(),
+          imageBase64: await createThumbnail(croppedBase64),
+          text: resp.text,
+          date: new Date().toISOString(),
+        };
+        const newHistory = [newItem, ...history].slice(0, 50);
+        setHistory(newHistory);
+        if (storeRef.current) {
+          await storeRef.current.set("history", newHistory);
+          await storeRef.current.save();
+        }
+      } else {
+        // No selection: run OCR on full image using file path if available
+        const input: Record<string, unknown> = { languages: ocrLanguages };
+        if (lastCapturePath) {
+          input.imagePath = lastCapturePath;
+        } else {
+          input.imageBase64 = captureImage.startsWith("data:")
+            ? captureImage.split(",")[1]
+            : captureImage;
+        }
+        resp = await invoke<OcrResponse>("run_ocr", { input });
+        setQrResult(null);
       }
 
-      const resp = await invoke<OcrResponse>("run_ocr", { input });
-      
       setOcrText(resp.text);
       setOcrEngine(resp.engine);
       setOcrWords(resp.words);
-      
-      // Auto-scan QR for selections
-      if (rects.length > 0) {
-        const croppedBase64 = await cropImageToBase64(captureImage, rects[0]);
-        const qr = await scanQrCode(croppedBase64);
-        setQrResult(qr);
-      } else {
-        setQrResult(null);
-      }
 
       if (autoCopy && resp.text) {
         await invoke("copy_to_clipboard", { text: resp.text });
         showToast("success", "toastTextCopied");
-      }
-
-      const historyImage = rects.length > 1 
-        ? captureImage 
-        : (rects.length === 1 ? await cropImageToBase64(captureImage, rects[0]) : captureImage);
-
-      const newItem: HistoryItem = {
-        id: crypto.randomUUID(),
-        imageBase64: await createThumbnail(historyImage),
-        text: resp.text,
-        date: new Date().toISOString(),
-      };
-      
-      const newHistory = [newItem, ...history].slice(0, 50);
-      setHistory(newHistory);
-      if (storeRef.current) {
-        await storeRef.current.set("history", newHistory);
-        await storeRef.current.save();
       }
     } catch (e) {
       setLastError(String(e));
       showToast("error", "toastOcrError");
     } finally {
       setOcrBusy(false);
-      // NOTE: We don't exit snipping mode anymore so user can select again
     }
   }, [autoCopy, captureImage, lastCapturePath, history, ocrBusy, ocrLanguages, showToast]);
 
