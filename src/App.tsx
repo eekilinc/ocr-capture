@@ -362,7 +362,7 @@ export default function App() {
         monitors={monitors}
         selectedMonitor={selectedMonitor}
         onMonitorSelect={setSelectedMonitor}
-        appVersion="2.0.0"
+        appVersion="2.0.1"
       />
 
       <main className="workspace-grid">
