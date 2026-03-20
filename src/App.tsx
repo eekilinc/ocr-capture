@@ -363,10 +363,7 @@ export default function App() {
         <section className="panel capture-panel">
           <SnippingArea 
             imageSrc={captureImage}
-            onSelectionComplete={(rects) => {
-              setSelections(rects);
-              handleOcr(rects);
-            }}
+            onSelectionComplete={setSelections}
             onImageSelect={handleImageSelect}
             isSnippingMode={isSnippingMode}
             loading={ocrBusy}
@@ -402,7 +399,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
-        appVersion="1.3.4"
+        appVersion="1.3.5"
         currentShortcut={currentShortcut}
         onShortcutUpdate={handleShortcutUpdate}
         ocrLanguages={ocrLanguages.split("+")}

@@ -169,53 +169,50 @@ export const SnippingArea = ({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
-      {loading ? (
-        <div className="result-empty-state">
-            <div className="result-empty-icon pulse">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <img className="capture-image" src={imageSrc || ""} alt="capture" draggable={false} />
+      
+      {loading && (
+        <div className="capture-loading-overlay">
+            <div className="loader-pill">
+              <span className="loader-dot"></span>
+              <span>{t("analyzing")}</span>
             </div>
-            <p className="result-empty-title">{t("analyzing")}</p>
-            <p className="result-empty-desc">{t("pleaseWait")}</p>
         </div>
-      ) : (
-        <>
-          <img className="capture-image" src={imageSrc || ""} alt="capture" draggable={false} />
-          
-          <div className="selection-overlay">
-            {localSelections.map((rect, i) => (
-                <div
-                key={i}
-                className="selection-box"
-                style={{
-                    left: rect.x,
-                    top: rect.y,
-                    width: rect.width,
-                    height: rect.height,
-                    boxShadow: 'none'
-                }}
-                />
-            ))}
+      )}
+      
+      <div className="selection-overlay">
+        {localSelections.map((rect, i) => (
+            <div
+            key={i}
+            className="selection-box"
+            style={{
+                left: rect.x,
+                top: rect.y,
+                width: rect.width,
+                height: rect.height,
+                boxShadow: 'none'
+            }}
+            />
+        ))}
 
-            {startPos && currentPos && (
-                <div
-                className="selection-box"
-                style={{
-                    left: Math.min(startPos.x, currentPos.x),
-                    top: Math.min(startPos.y, currentPos.y),
-                    width: Math.abs(currentPos.x - startPos.x),
-                    height: Math.abs(currentPos.y - startPos.y),
-                }}
-                />
-            )}
-          </div>
+        {startPos && currentPos && (
+            <div
+            className="selection-box"
+            style={{
+                left: Math.min(startPos.x, currentPos.x),
+                top: Math.min(startPos.y, currentPos.y),
+                width: Math.abs(currentPos.x - startPos.x),
+                height: Math.abs(currentPos.y - startPos.y),
+            }}
+            />
+        )}
+      </div>
 
-          {isSnippingMode && !startPos && (
-            <div className="snipping-hints">
-              <div className="hint-pill">{t("hintDragToSelect")}</div>
-              <div className="hint-pill secondary">{t("hintMultiSelect")}</div>
-            </div>
-          )}
-        </>
+      {isSnippingMode && !startPos && !loading && (
+        <div className="snipping-hints">
+          <div className="hint-pill">{t("hintDragToSelect")}</div>
+          <div className="hint-pill secondary">{t("hintMultiSelect")}</div>
+        </div>
       )}
     </div>
   );
