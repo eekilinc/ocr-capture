@@ -146,6 +146,17 @@ export const translations = {
     btnRestore: "Çalışma Alanına Yükle",
     btnExportHistory: "Geçmişi Dışa Aktar",
     
+    // Image Filters & Enhancements
+    imageFilters: "Görsel Ön Filtresi",
+    filterNormal: "Normal",
+    filterContrast: "Yüksek Kontrast",
+    filterInvert: "Koyu Mod (Ters Çevir)",
+    filterGrayscale: "Gri Tonlama",
+    
+    // Audio feedback
+    soundEffects: "Ses Efektleri",
+    soundEffectsDesc: "Ekran yakalama ve kopyalama işlemlerinde deklanşör ve bildirim sesleri çalar.",
+
     // Sessions
     restartApp: "Yeniden Başlatma Gerekli",
     restartDesc: "Bazı değişikliklerin tam uygulanması için uygulamayı yeniden başlatmanız gerekebilir.",
@@ -309,6 +320,17 @@ export const translations = {
     btnRestore: "Load to Workspace",
     btnExportHistory: "Export History",
     
+    // Image Filters & Enhancements
+    imageFilters: "Image Pre-Filter",
+    filterNormal: "Normal",
+    filterContrast: "High Contrast",
+    filterInvert: "Dark Mode (Invert)",
+    filterGrayscale: "Grayscale",
+    
+    // Audio feedback
+    soundEffects: "Sound Effects",
+    soundEffectsDesc: "Plays shutter and notification chimes on capture and copy actions.",
+
     // Sessions
     restartApp: "Restart Required",
     restartDesc: "You may need to restart the application for some changes to take full effect.",

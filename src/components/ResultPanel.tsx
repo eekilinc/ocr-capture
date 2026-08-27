@@ -14,6 +14,8 @@ import {
   getTextStats,
 } from "../lib/textTransforms";
 
+import { sounds } from "../lib/soundEffects";
+
 type CopyFormat = "plain" | "markdown" | "single";
 
 type ResultPanelProps = {
@@ -125,6 +127,7 @@ export const ResultPanel = memo(({
   const handleCopyClick = () => {
     onCopy(formatText(text, copyFormat));
     setCopyLabel(t("btnCopied"));
+    sounds.playSuccess();
   };
 
   const handleSpeak = () => {

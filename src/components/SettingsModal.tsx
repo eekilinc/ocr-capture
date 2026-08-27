@@ -5,6 +5,7 @@ import { Store } from "@tauri-apps/plugin-store";
 import { useTranslation } from "../hooks/useTranslation";
 import { Language } from "../i18n/translations";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { sounds } from "../lib/soundEffects";
 
 type Tab = "general" | "shortcut" | "ocr" | "appearance" | "about";
 
@@ -49,6 +50,7 @@ export const SettingsModal = ({
   const [activeTab, setActiveTab] = useState<Tab>("general");
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(sounds.isEnabled());
   const [isRecording, setIsRecording] = useState(false);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [recordError, setRecordError] = useState("");
@@ -306,6 +308,33 @@ export const SettingsModal = ({
                   </div>
                   <label className="switch">
                     <input type="checkbox" checked={alwaysOnTop} onChange={(e) => onAlwaysOnTopUpdate(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                </div>
+
+                <div className="setting-item">
+                  <div className="setting-label">
+                    <div className="setting-label-icon">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span>{t("soundEffects")}</span>
+                      <small>{t("soundEffectsDesc")}</small>
+                    </div>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={soundEnabled}
+                      onChange={(e) => {
+                        setSoundEnabled(e.target.checked);
+                        sounds.setEnabled(e.target.checked);
+                        if (e.target.checked) sounds.playSuccess();
+                      }}
+                    />
                     <span className="slider round"></span>
                   </label>
                 </div>

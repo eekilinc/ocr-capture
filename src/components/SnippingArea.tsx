@@ -1,10 +1,13 @@
 import { useRef, useState, useEffect, useCallback, memo } from "react";
 import { useTranslation } from "../hooks/useTranslation";
+import { sounds } from "../lib/soundEffects";
 import type { Rect } from "../types";
 
 const PREVIEW_W = 220;
 const PREVIEW_H = 140;
 const PREVIEW_MARGIN = 16;
+
+type ImageFilterMode = "normal" | "contrast" | "invert" | "grayscale";
 
 interface SnippingAreaProps {
   imageSrc: string | null;
@@ -29,6 +32,8 @@ export const SnippingArea = memo(({
   const [localSelections, setLocalSelections] = useState<Rect[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  const [imageFilter, setImageFilter] = useState<ImageFilterMode>("normal");
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -87,9 +92,16 @@ export const SnippingArea = memo(({
     ctx.clearRect(0, 0, PREVIEW_W, PREVIEW_H);
     ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
-    // Draw the image using the natural-pixel source rect, scaled to preview dimensions
+    
+    // Apply filter in preview canvas
+    if (imageFilter === "contrast") ctx.filter = "contrast(160%) brightness(105%)";
+    else if (imageFilter === "invert") ctx.filter = "invert(100%) hue-rotate(180deg)";
+    else if (imageFilter === "grayscale") ctx.filter = "grayscale(100%) contrast(140%)";
+    else ctx.filter = "none";
+
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, PREVIEW_W, PREVIEW_H);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    ctx.filter = "none";
+  }, [imageFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!isSnippingMode || !imageSrc || loading) return;
@@ -97,6 +109,7 @@ export const SnippingArea = memo(({
     setStartPos(pos);
     setCurrentPos(pos);
     setPreviewPos({ x: pos.x, y: pos.y });
+    sounds.playSnipStart();
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -121,6 +134,7 @@ export const SnippingArea = memo(({
       const updated = e.shiftKey ? [...localSelections, newRect] : [newRect];
       setLocalSelections(updated);
       onSelectionComplete(updated);
+      sounds.playShutter();
     }
 
     setStartPos(null);
@@ -175,6 +189,19 @@ export const SnippingArea = memo(({
       boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
       pointerEvents: "none",
     };
+  };
+
+  const getImageFilterStyle = () => {
+    switch (imageFilter) {
+      case "contrast":
+        return "contrast(160%) brightness(105%)";
+      case "invert":
+        return "invert(100%) hue-rotate(180deg)";
+      case "grayscale":
+        return "grayscale(100%) contrast(140%)";
+      default:
+        return "none";
+    }
   };
 
   if (!imageSrc && !loading) {
@@ -234,12 +261,16 @@ export const SnippingArea = memo(({
             <span className="kbd-sep">+</span>
             <kbd>Shift</kbd>
             <span className="kbd-sep">+</span>
-            <kbd>F9</kbd>
+            <kbd>X</kbd>
           </div>
         </div>
       </div>
     );
   }
+
+  const { scaleX, scaleY } = getLetterboxParams();
+  const currentSelW = startPos && currentPos ? Math.round(Math.abs(currentPos.x - startPos.x) * scaleX) : 0;
+  const currentSelH = startPos && currentPos ? Math.round(Math.abs(currentPos.y - startPos.y) * scaleY) : 0;
 
   return (
     <div
@@ -258,11 +289,46 @@ export const SnippingArea = memo(({
         src={imageSrc || ""} 
         alt="capture" 
         draggable={false}
+        style={{ filter: getImageFilterStyle() }}
         onLoad={(e) => {
           const el = e.currentTarget;
           onImageSize?.(el.clientWidth, el.clientHeight);
         }}
       />
+
+      {/* Floating Image Pre-Filter Toolbar */}
+      {imageSrc && (
+        <div className="image-filters-toolbar" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`filter-pill-btn ${imageFilter === "normal" ? "active" : ""}`}
+            onClick={() => setImageFilter("normal")}
+            title={t("filterNormal")}
+          >
+            {t("filterNormal")}
+          </button>
+          <button
+            className={`filter-pill-btn ${imageFilter === "contrast" ? "active" : ""}`}
+            onClick={() => setImageFilter("contrast")}
+            title={t("filterContrast")}
+          >
+            {t("filterContrast")}
+          </button>
+          <button
+            className={`filter-pill-btn ${imageFilter === "invert" ? "active" : ""}`}
+            onClick={() => setImageFilter("invert")}
+            title={t("filterInvert")}
+          >
+            {t("filterInvert")}
+          </button>
+          <button
+            className={`filter-pill-btn ${imageFilter === "grayscale" ? "active" : ""}`}
+            onClick={() => setImageFilter("grayscale")}
+            title={t("filterGrayscale")}
+          >
+            {t("filterGrayscale")}
+          </button>
+        </div>
+      )}
       
       {loading && (
         <div className="capture-loading-overlay">
@@ -290,14 +356,20 @@ export const SnippingArea = memo(({
 
         {startPos && currentPos && (
           <div
-            className="selection-box"
+            className="selection-box active-snipping-box"
             style={{
               left: Math.min(startPos.x, currentPos.x),
               top: Math.min(startPos.y, currentPos.y),
               width: Math.abs(currentPos.x - startPos.x),
               height: Math.abs(currentPos.y - startPos.y),
             }}
-          />
+          >
+            {currentSelW > 25 && currentSelH > 15 && (
+              <div className="selection-dimension-badge">
+                {currentSelW} × {currentSelH} px
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -307,11 +379,11 @@ export const SnippingArea = memo(({
           <canvas ref={previewCanvasRef} width={PREVIEW_W} height={PREVIEW_H} style={{ display: 'block' }} />
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0,
-            background: 'rgba(0,0,0,0.65)', padding: '2px 8px',
-            fontSize: '0.65rem', color: 'rgba(255,255,255,0.85)', textAlign: 'center',
-            fontFamily: 'monospace', letterSpacing: '0.03em',
+            background: 'rgba(0,0,0,0.7)', padding: '3px 8px',
+            fontSize: '0.68rem', color: '#fff', textAlign: 'center',
+            fontFamily: 'monospace', letterSpacing: '0.04em', fontWeight: 600,
           }}>
-            {Math.abs((currentPos?.x ?? 0) - startPos.x).toFixed(0)} × {Math.abs((currentPos?.y ?? 0) - startPos.y).toFixed(0)} px
+            {currentSelW} × {currentSelH} px
           </div>
         </div>
       )}

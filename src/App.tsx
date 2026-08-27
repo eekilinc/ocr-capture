@@ -378,6 +378,33 @@ export default function App() {
     }
   }, [currentShortcut, handleNewCapture, showToast]);
 
+  // Global Keyboard shortcuts inside app window
+  useEffect(() => {
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+      const isInput = activeTag === "input" || activeTag === "textarea";
+
+      // Escape: Close modals or cancel snipping
+      if (e.key === "Escape") {
+        if (isSettingsOpen) setIsSettingsOpen(false);
+        else if (isHistoryOpen) setIsHistoryOpen(false);
+        else if (isSnippingMode && captureImage) setIsSnippingMode(false);
+      }
+
+      // Ctrl+C (when not editing text): Copy recognized OCR text
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && !isInput) {
+        if (ocrText) {
+          e.preventDefault();
+          handleCopy(ocrText);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown);
+  }, [isSettingsOpen, isHistoryOpen, isSnippingMode, captureImage, ocrText, handleCopy]);
+
+
   return (
     <div className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <HeaderBar 
