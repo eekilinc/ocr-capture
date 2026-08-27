@@ -2,63 +2,16 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 1. tauri.conf.json'dan versiyon oku; tag ve release durumunu hazırla
-  # ─────────────────────────────────────────────────────────────────────────────
-  create-tag:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Versiyonu tauri.conf.json'dan oku
-        id: get_version
-        run: |
-          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Versiyon: $VERSION"
-
-      - name: Tag yoksa oluştur ve push et
-        id: push_tag
-        run: |
-          TAG="v${{ steps.get_version.outputs.version }}"
-          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
-            echo "Tag $TAG zaten mevcut."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag "$TAG"
-            git push origin "$TAG"
-            echo "Tag $TAG oluşturuldu."
-          fi
-
-      - name: Release'i önceden oluştur veya varsa eski asset'leri temizle
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ steps.get_version.outputs.version }}"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG oluşturuluyor..."
-            gh release create "$TAG" --title "Metin Yakalayıcı $TAG" --notes "Metin Yakalayıcı $TAG sürümü" || true
-          fi
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # 2. Platformlara göre derleme ve release
-  # ─────────────────────────────────────────────────────────────────────────────
   release:
-    needs: create-tag
     permissions:
       contents: write
     strategy:
@@ -165,10 +118,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_BACKTRACE: '1'
         with:
-          tagName: v${{ needs.create-tag.outputs.version }}
-          releaseName: 'Metin Yakalayıcı v${{ needs.create-tag.outputs.version }}'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Metin Yakalayıcı ${{ github.ref_name }}'
           releaseBody: |
-            ## Metin Yakalayıcı v${{ needs.create-tag.outputs.version }}
+            ## Metin Yakalayıcı ${{ github.ref_name }}
 
             ### Kurulum
 
