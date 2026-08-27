@@ -244,7 +244,7 @@ export const SnippingArea = memo(({
   return (
     <div
       ref={containerRef}
-      className={`capture-container ${isSnippingMode ? "snipping" : ""} ${isDragOver ? "drag-over" : ""}`}
+      className={`capture-container ${imageSrc ? "has-image" : ""} ${isSnippingMode ? "snipping" : ""} ${isDragOver ? "drag-over" : ""}`}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

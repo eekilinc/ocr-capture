@@ -445,28 +445,22 @@ button {
 }
 
 /* --- Result Area --- */
-.result-textarea {
+.result-panel-container {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.result-panel-content {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  line-height: 1.6;
-  resize: none;
-  outline: none;
-}
-
-.result-textarea::placeholder {
-  color: var(--text-tertiary);
-  opacity: 0.5;
-}
-
-.copy-btn-wrapper {
-  position: absolute;
-  bottom: 1.5rem;
-  right: 1.5rem;
+  min-height: 0;
+  padding: 1rem 1.25rem 1.25rem;
+  overflow: hidden;
 }
 
 /* --- Toast --- */
@@ -2521,44 +2515,140 @@ kbd {
 }
 
 /* ==========================================================================
-   Result Textarea & Stats Bar
+   Result Flow Layout, Textarea & Bottom Action Bar
    ========================================================================== */
+.result-flow-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .result-textarea-wrapper {
   display: flex;
   flex-direction: column;
   flex: 1;
-  position: relative;
-  min-height: 180px;
+  min-height: 0;
+  background: var(--bg-color);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.result-textarea-wrapper:focus-within {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
 .result-textarea {
   flex: 1;
   width: 100%;
-  padding: 0.75rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--modal-border);
-  background: var(--bg-color);
+  height: 100%;
+  min-height: 80px;
+  padding: 0.85rem;
+  border: none;
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.9rem;
+  line-height: 1.6;
   resize: none;
   outline: none;
   box-sizing: border-box;
-}
-
-.result-textarea:focus {
-  border-color: var(--primary-color);
+  overflow-y: auto;
 }
 
 .result-stats-bar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.7rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
   color: var(--text-tertiary);
   font-weight: 500;
+  border-top: 1px solid var(--modal-border);
+  background: rgba(0, 0, 0, 0.02);
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .result-stats-bar {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.result-bottom-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.btn-copy-main {
+  flex: 1;
+  padding: 0.55rem 1rem;
+  justify-content: center;
+}
+
+.engine-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--primary-color);
+}
+
+/* ==========================================================================
+   Collapsed Sidebar State
+   ========================================================================== */
+.collapsed-clickable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.collapsed-clickable:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: var(--primary-color);
+}
+
+.collapsed-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.25rem 0;
+  height: 100%;
+  width: 100%;
+}
+
+.collapsed-vertical-title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.collapsed-dot-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  box-shadow: 0 0 8px var(--primary-color);
+  animation: pulse 2s infinite;
 }
 
 /* ==========================================================================
