@@ -218,7 +218,7 @@ export const SettingsModal = ({
                   </select>
                 </div>
 
-                <div className="setting-item" style={{ marginTop: '1.5rem', background: 'rgba(52, 152, 219, 0.05)', borderRadius: '12px', padding: '1rem', border: '1px solid rgba(52, 152, 219, 0.1)' }}>
+                <div className="setting-item restart-box">
                   <div className="setting-label">
                     <div className="setting-label-icon" style={{ color: 'var(--primary-color)' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -230,7 +230,7 @@ export const SettingsModal = ({
                       <small>{t("restartDesc")}</small>
                     </div>
                   </div>
-                  <button className="btn btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }} onClick={() => relaunch()}>
+                  <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem' }} onClick={() => relaunch()}>
                     {t("btnRestart")}
                   </button>
                 </div>
@@ -424,17 +424,17 @@ export const SettingsModal = ({
             )}
 
             {activeTab === "about" && (
-              <div className="about-content" style={{ padding: '2rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                <div className="app-logo-large" style={{ marginBottom: '1rem', color: 'var(--primary-color)' }}>
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="4"/><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/></svg>
+              <div className="about-content">
+                <div className="app-logo-large">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="4"/><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/></svg>
                 </div>
-                <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem' }}>{t("appName")}</h2>
+                <h2>{t("appName")}</h2>
                 <div className="version">v{appVersion}</div>
-                <p className="description" style={{ maxWidth: '400px', margin: '0.5rem auto 1.5rem' }}>{t("appDescription")}</p>
+                <p className="description">{t("appDescription")}</p>
                 
                 <div className="tech-stack-section">
-                  <h4 style={{ marginBottom: '1rem', opacity: 0.8 }}>{t("techStack")}</h4>
-                  <div className="tech-grid-premium" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                  <h4>{t("techStack")}</h4>
+                  <div className="tech-grid-premium">
                     <div className="tech-card">
                       <div className="tech-icon" style={{ backgroundColor: "#00d8ff" }}></div>
                       <div className="tech-info">
@@ -480,14 +480,14 @@ export const SettingsModal = ({
                   </div>
                 </div>
 
-                <div className="about-links" style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'center' }}>
-                    <a href="https://github.com/eekilinc/ocr-capture" target="_blank" className="btn btn-secondary" style={{ borderRadius: '12px', width: '100%', maxWidth: '240px' }}>
+                <div className="about-links">
+                    <a href="https://github.com/eekilinc/ocr-capture" target="_blank" rel="noreferrer" className="btn btn-secondary">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
                         <span>{t("githubRepo")}</span>
                     </a>
                 </div>
 
-                <div className="credits" style={{ marginTop: '1.5rem', opacity: 0.6, fontSize: '0.8rem' }}>
+                <div className="credits">
                    Developed by Ekrem Kılınç
                 </div>
               </div>
