@@ -307,6 +307,24 @@ export default function App() {
     }
   }, [captureImage, isSnippingMode, selections.length, ocrText, ocrBusy, handleOcr]);
 
+  const handleToggleStarHistory = useCallback(async (id: string) => {
+    setHistory(prev => {
+      const next = prev.map(item => item.id === id ? { ...item, starred: !item.starred } : item);
+      if (storeRef.current) {
+        storeRef.current.set("history", next).then(() => storeRef.current?.save());
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRestoreHistory = useCallback((item: HistoryItem) => {
+    setOcrText(item.text);
+    setCaptureImage(item.imageBase64);
+    setSelections([]);
+    setIsHistoryOpen(false);
+    showToast("success", "toastItemRestored");
+  }, [showToast]);
+
   const handleClear = useCallback(() => {
     setCaptureImage(null);
     setLastCapturePath(null);
@@ -392,6 +410,7 @@ export default function App() {
 
         <ResultPanel 
           text={ocrText}
+          onTextChange={setOcrText}
           loading={ocrBusy}
           onCopy={handleCopy}
           engine={ocrEngine}
@@ -402,6 +421,7 @@ export default function App() {
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           qrResult={qrResult}
+          onToast={(kind, msg) => showToast(kind, msg)}
         />
       </main>
 
@@ -412,6 +432,8 @@ export default function App() {
         onDelete={handleDeleteHistory}
         onClear={handleClearHistory}
         onCopy={handleCopy}
+        onToggleStar={handleToggleStarHistory}
+        onRestore={handleRestoreHistory}
       />
 
       <SettingsModal 

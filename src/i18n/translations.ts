@@ -90,9 +90,39 @@ export const translations = {
     techStack: "Teknoloji Yığını",
     version: "Sürüm",
     developer: "Geliştirici",
-    openSource: "Açık Kaynak",
     shortcutErrorNoModifier: "En az bir modifier (Ctrl, Alt, Shift) gerekli.",
     shortcutWarningAltGr: "Ctrl+Alt kombinasyonu Windows'ta AltGr ile çakışabilir.",
+    
+    // Smart Entity Detection & Actions
+    detectedEntities: "Algılanan Veriler",
+    chipUrl: "Bağlantı",
+    chipEmail: "E-posta",
+    chipIban: "TR IBAN",
+    chipPhone: "Telefon",
+    chipColor: "HEX Renk",
+    btnOpenInBrowser: "Tarayıcıda Aç",
+    btnSendEmail: "E-posta Gönder",
+    btnTranslate: "Google Çeviri",
+    btnTranslateDeepL: "DeepL Çeviri",
+    
+    // Text Transforms & Stats
+    textTransforms: "Metin Dönüştürme",
+    btnUppercase: "BÜYÜK",
+    btnLowercase: "küçük",
+    btnTitlecase: "Başlık",
+    btnCleanWhitespace: "Boşlukları Temizle",
+    btnSingleLine: "Tek Satır",
+    btnBulletList: "Madde Listesi",
+    searchInResult: "Metin içinde ara...",
+    matchCount: "{count} eşleşme",
+    statsChars: "Karakter",
+    statsWords: "Kelime",
+    statsLines: "Satır",
+    
+    // Exporting
+    btnExportText: "Metni Kaydet (.txt)",
+    btnExportImage: "Görseli Kaydet (.png)",
+    btnSaveFile: "Kaydet",
     
     // History
     history: "Geçmiş",
@@ -111,6 +141,10 @@ export const translations = {
     noResultsFoundDesc: '"{query}" için eşleşen kayıt yok.',
     copyNItems: "{count} Öğeyi Kopyala",
     clearAll: "Tümünü Temizle",
+    filterAll: "Tümü",
+    filterStarred: "Yıldızlılar",
+    btnRestore: "Çalışma Alanına Yükle",
+    btnExportHistory: "Geçmişi Dışa Aktar",
     
     // Sessions
     restartApp: "Yeniden Başlatma Gerekli",
@@ -126,6 +160,8 @@ export const translations = {
     toastHistoryCleared: "Geçmiş temizlendi.",
     toastHistoryCopied: "Geçmiş metni kopyalandı.",
     toastShortcutUpdated: "Kısayol güncellendi: ",
+    toastFileSaved: "Dosya başarıyla kaydedildi.",
+    toastItemRestored: "Kayıt çalışma alanına aktarıldı.",
   },
   en: {
     // Header
@@ -175,6 +211,37 @@ export const translations = {
     btnCopied: "Copied!",
     analyzing: "Analyzing text...",
     pleaseWait: "Please wait...",
+    
+    // Smart Entity Detection & Actions
+    detectedEntities: "Detected Entities",
+    chipUrl: "URL Link",
+    chipEmail: "Email",
+    chipIban: "TR IBAN",
+    chipPhone: "Phone",
+    chipColor: "HEX Color",
+    btnOpenInBrowser: "Open in Browser",
+    btnSendEmail: "Send Email",
+    btnTranslate: "Google Translate",
+    btnTranslateDeepL: "DeepL Translate",
+    
+    // Text Transforms & Stats
+    textTransforms: "Text Transforms",
+    btnUppercase: "UPPERCASE",
+    btnLowercase: "lowercase",
+    btnTitlecase: "Title Case",
+    btnCleanWhitespace: "Clean Whitespace",
+    btnSingleLine: "Single Line",
+    btnBulletList: "Bullet List",
+    searchInResult: "Search in result...",
+    matchCount: "{count} matches",
+    statsChars: "Chars",
+    statsWords: "Words",
+    statsLines: "Lines",
+    
+    // Exporting
+    btnExportText: "Save Text (.txt)",
+    btnExportImage: "Save Image (.png)",
+    btnSaveFile: "Save",
     
     // Settings
     settings: "Settings",
@@ -237,7 +304,11 @@ export const translations = {
     noResultsFoundDesc: 'No matches found for "{query}".',
     copyNItems: "Copy {count} Items",
     clearAll: "Clear All",
-
+    filterAll: "All",
+    filterStarred: "Starred",
+    btnRestore: "Load to Workspace",
+    btnExportHistory: "Export History",
+    
     // Sessions
     restartApp: "Restart Required",
     restartDesc: "You may need to restart the application for some changes to take full effect.",
@@ -252,6 +323,8 @@ export const translations = {
     toastHistoryCleared: "History cleared.",
     toastHistoryCopied: "History text copied.",
     toastShortcutUpdated: "Shortcut updated: ",
+    toastFileSaved: "File saved successfully.",
+    toastItemRestored: "Item restored to workspace.",
   }
 };
 

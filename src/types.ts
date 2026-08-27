@@ -46,6 +46,7 @@ export type HistoryItem = {
   imageBase64: string;
   text: string;
   date: string;
+  starred?: boolean;
 };
 
 export type ImageFilters = {

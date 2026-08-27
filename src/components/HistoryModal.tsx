@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import type { HistoryItem } from "../types";
 import { useTranslation } from "../hooks/useTranslation";
+import { interpolate } from "../i18n/translations";
 
 interface HistoryModalProps {
   isOpen: boolean;
@@ -9,6 +10,8 @@ interface HistoryModalProps {
   onDelete: (id: string) => void;
   onClear: () => void;
   onCopy: (text: string) => void;
+  onToggleStar?: (id: string) => void;
+  onRestore?: (item: HistoryItem) => void;
 }
 
 function getRelativeTime(dateStr: string, currentLang: string) {
@@ -41,18 +44,29 @@ export const HistoryModal = ({
   onDelete,
   onClear,
   onCopy,
+  onToggleStar,
+  onRestore,
 }: HistoryModalProps) => {
   const { t, lang } = useTranslation();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "starred">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBatchCopySuccess, setIsBatchCopySuccess] = useState(false);
 
+  const starredCount = useMemo(() => {
+    return history.filter(i => i.starred).length;
+  }, [history]);
+
   const filteredHistory = useMemo(() => {
-    if (!searchQuery.trim()) return history;
+    let list = history;
+    if (activeFilter === "starred") {
+      list = list.filter((item) => item.starred);
+    }
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
-    return history.filter((item) => item.text.toLowerCase().includes(q));
-  }, [history, searchQuery]);
+    return list.filter((item) => item.text.toLowerCase().includes(q));
+  }, [history, activeFilter, searchQuery]);
 
   const handleCopy = (id: string, text: string) => {
     onCopy(text);
@@ -88,13 +102,44 @@ export const HistoryModal = ({
       }
   };
 
+  const handleExportHistory = () => {
+    const exportData = filteredHistory.map(item => ({
+      date: item.date,
+      text: item.text,
+      starred: !!item.starred,
+    }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `ocr-gecmis-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content history-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{t("history")} ({filteredHistory.length}/{history.length})</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h3>{t("history")} ({filteredHistory.length}/{history.length})</h3>
+            <div className="history-tab-group">
+              <button 
+                className={`history-tab-btn ${activeFilter === "all" ? "active" : ""}`}
+                onClick={() => setActiveFilter("all")}
+              >
+                {t("filterAll")}
+              </button>
+              <button 
+                className={`history-tab-btn ${activeFilter === "starred" ? "active" : ""}`}
+                onClick={() => setActiveFilter("starred")}
+              >
+                ★ {t("filterStarred")} ({starredCount})
+              </button>
+            </div>
+          </div>
+
           <div className="header-actions">
             {history.length > 0 && selectedIds.size > 0 && (
               <button 
@@ -102,9 +147,16 @@ export const HistoryModal = ({
                 onClick={handleBatchCopy}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{marginRight: 4}}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                {isBatchCopySuccess ? t("btnCopied") : t("copyNItems", { count: selectedIds.size })}
+                {isBatchCopySuccess ? t("btnCopied") : interpolate(t("copyNItems"), { count: selectedIds.size })}
               </button>
             )}
+
+            {history.length > 0 && (
+              <button className="btn btn-secondary btn-sm" onClick={handleExportHistory} title={t("btnExportHistory")}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+            )}
+
             {history.length > 0 && (
               <button className="btn-text-danger" onClick={onClear}>
                 {t("clearAll")}
@@ -133,7 +185,7 @@ export const HistoryModal = ({
               />
             </div>
             <button className="btn btn-secondary btn-sm" onClick={toggleSelectAll}>
-                {selectedIds.size === filteredHistory.length ? t("deselectAll") : t("selectAll")}
+                {selectedIds.size === filteredHistory.length && filteredHistory.length > 0 ? t("deselectAll") : t("selectAll")}
             </button>
           </div>
         )}
@@ -159,7 +211,7 @@ export const HistoryModal = ({
                 </svg>
               </div>
               <p className="history-empty-title">{t("noResultsFoundTitle")}</p>
-              <p className="history-empty-desc">{t("noResultsFoundDesc", { query: searchQuery })}</p>
+              <p className="history-empty-desc">{interpolate(t("noResultsFoundDesc"), { query: searchQuery })}</p>
             </div>
           ) : (
             filteredHistory.map((item) => (
@@ -181,9 +233,18 @@ export const HistoryModal = ({
                 </div>
                 <div className="history-content">
                   <div className="history-meta">
-                    <span className="date" title={new Date(item.date).toLocaleString()}>
-                      {getRelativeTime(item.date, lang)}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button 
+                        className={`star-btn ${item.starred ? "starred" : ""}`}
+                        onClick={(e) => { e.stopPropagation(); onToggleStar?.(item.id); }}
+                        title="Favori"
+                      >
+                        ★
+                      </button>
+                      <span className="date" title={new Date(item.date).toLocaleString()}>
+                        {getRelativeTime(item.date, lang)}
+                      </span>
+                    </div>
                     <button className="btn-icon-sm danger" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} title={t("btnDelete")}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
@@ -192,6 +253,16 @@ export const HistoryModal = ({
                     <p>{item.text || t("noTextFound")}</p>
                   </div>
                   <div className="history-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                    {onRestore && (
+                      <button 
+                        className="btn-sm secondary" 
+                        onClick={(e) => { e.stopPropagation(); onRestore(item); }}
+                        title={t("btnRestore")}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                        <span>{t("btnRestore")}</span>
+                      </button>
+                    )}
                     <button className={`btn-sm ${copiedId === item.id ? "success" : "secondary"}`} onClick={(e) => { e.stopPropagation(); handleCopy(item.id, item.text); }} disabled={!item.text}>
                       {copiedId === item.id ? t("btnCopied") : t("btnCopyText")}
                     </button>
