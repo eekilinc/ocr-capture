@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, memo, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { OcrWord, Rect } from "../types";
 import { useTranslation } from "../hooks/useTranslation";
 import { interpolate } from "../i18n/translations";
@@ -24,6 +25,7 @@ type ResultPanelProps = {
   error: string;
   words: OcrWord[];
   captureImage: string | null;
+  capturePath?: string | null;
   selections: Rect[];
   isCollapsed: boolean;
   onToggleCollapse: () => void;
@@ -55,6 +57,7 @@ export const ResultPanel = memo(({
   error,
   words,
   captureImage,
+  capturePath,
   selections,
   isCollapsed,
   onToggleCollapse,
@@ -168,24 +171,45 @@ export const ResultPanel = memo(({
     handleOpenUrl(url);
   };
 
-  const handleExportText = () => {
+  const handleExportText = async () => {
     if (!text) return;
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `ocr-metin-${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    onToast?.("success", t("toastFileSaved"));
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const filePath = await save({
+        defaultPath: `ocr-metin-${new Date().toISOString().slice(0, 10)}.txt`,
+        filters: [{ name: "Text File", extensions: ["txt", "md"] }],
+      });
+      if (!filePath) return;
+
+      await invoke("save_text_file", {
+        content: text,
+        destinationPath: filePath,
+      });
+      onToast?.("success", t("toastFileSaved"));
+    } catch (err) {
+      console.error("Save text failed:", err);
+    }
   };
 
-  const handleExportImage = () => {
-    if (!captureImage) return;
-    const a = document.createElement("a");
-    a.href = captureImage;
-    a.download = `ocr-gorsel-${new Date().toISOString().slice(0, 10)}.png`;
-    a.click();
-    onToast?.("success", t("toastFileSaved"));
+  const handleExportImage = async () => {
+    if (!captureImage && !capturePath) return;
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const filePath = await save({
+        defaultPath: `ocr-gorsel-${new Date().toISOString().slice(0, 10)}.png`,
+        filters: [{ name: "PNG Image", extensions: ["png", "jpg", "jpeg"] }],
+      });
+      if (!filePath) return;
+
+      await invoke("save_file_to_disk", {
+        sourcePath: capturePath || null,
+        base64Data: captureImage && captureImage.startsWith("data:") ? captureImage : null,
+        destinationPath: filePath,
+      });
+      onToast?.("success", t("toastFileSaved"));
+    } catch (err) {
+      console.error("Save image failed:", err);
+    }
   };
 
   const handleTransform = (transformer: (t: string) => string) => {

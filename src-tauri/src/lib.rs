@@ -66,6 +66,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::capture::capture_screen,
             commands::capture::get_monitors,
+            commands::capture::save_file_to_disk,
+            commands::capture::save_text_file,
             commands::ocr::run_ocr,
             commands::ocr::list_ocr_languages,
             commands::ocr::download_ocr_language

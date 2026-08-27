@@ -417,6 +417,7 @@ export default function App() {
           error={lastError}
           words={ocrWords}
           captureImage={captureImage}
+          capturePath={lastCapturePath}
           selections={selections}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}

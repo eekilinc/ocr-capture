@@ -120,3 +120,30 @@ pub fn capture_screen(monitor_id: Option<u32>) -> Result<CaptureResponse, String
     })
 }
 
+#[tauri::command]
+pub fn save_file_to_disk(source_path: Option<String>, base64_data: Option<String>, destination_path: String) -> Result<(), String> {
+    if let Some(src) = source_path {
+        std::fs::copy(&src, &destination_path).map_err(|e| format!("Dosya kopyalanamadi: {e}"))?;
+    } else if let Some(b64) = base64_data {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+        let clean_b64 = if let Some(idx) = b64.find(',') {
+            &b64[idx + 1..]
+        } else {
+            &b64
+        };
+        let bytes = STANDARD.decode(clean_b64).map_err(|e| format!("Base64 cozumleme hatasi: {e}"))?;
+        std::fs::write(&destination_path, bytes).map_err(|e| format!("Dosya yazilamadi: {e}"))?;
+    } else {
+        return Err(String::from("Kaydedilecek gorsel verisi bulunamadi."));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_text_file(content: String, destination_path: String) -> Result<(), String> {
+    std::fs::write(&destination_path, content).map_err(|e| format!("Metin dosyasi yazilamadi: {e}"))?;
+    Ok(())
+}
+
+
